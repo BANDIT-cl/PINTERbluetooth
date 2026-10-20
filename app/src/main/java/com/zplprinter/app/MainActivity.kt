@@ -9,7 +9,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -24,8 +23,13 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.zplprinter.app.ui.designer.DesignerScreen
-import com.zplprinter.app.ui.printer.PrinterSettingsScreen
+import com.zplprinter.app.ui.home.HomeScreen
+import com.zplprinter.app.ui.printer.ConnectionState
+import com.zplprinter.app.ui.printer.MaintenanceScreen
+import com.zplprinter.app.ui.printer.PrinterConnectionScreen
 import com.zplprinter.app.ui.printer.PrinterViewModel
+import com.zplprinter.app.ui.printer.PrintSettingsScreen
+import com.zplprinter.app.ui.theme.ZplTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -58,27 +62,65 @@ class MainActivity : ComponentActivity() {
             val printerViewModel: PrinterViewModel = viewModel()
             val incoming by incomingZplState
 
+            val navController = rememberNavController()
+
             LaunchedEffect(incoming) {
                 incoming?.let { (zpl, _) ->
+                    navController.navigate("printer")
                     printerViewModel.printSharedZpl(zpl)
                     incomingZplState.value = null
                 }
             }
 
-            MaterialTheme {
+            ZplTheme {
                 Surface {
-                    val navController = rememberNavController()
-                    NavHost(navController = navController, startDestination = "settings") {
-                        composable("settings") {
-                            PrinterSettingsScreen(
+                    val printerUiState by printerViewModel.uiState.collectAsState()
+
+                    NavHost(navController = navController, startDestination = "home") {
+                        composable("home") {
+                            HomeScreen(
+                                connectionState = printerUiState.connectionState,
+                                connectedDeviceLabel = printerUiState.rememberedPrinterName,
+                                onOpenDesigner = { navController.navigate("designer") },
+                                onOpenPrinter = { navController.navigate("printer") },
+                                onOpenPrintSettings = { navController.navigate("print_settings") },
+                                onOpenMaintenance = { navController.navigate("maintenance") },
+                            )
+                        }
+                        composable("printer") {
+                            PrinterConnectionScreen(
                                 hasBluetoothPermission = hasPermission,
                                 onRequestPermission = { permissionLauncher.launch(requiredBluetoothPermissions) },
-                                onOpenDesigner = { navController.navigate("designer") },
+                                onBack = { navController.popBackStack() },
                                 viewModel = printerViewModel,
                             )
                         }
+                        composable("print_settings") {
+                            PrintSettingsScreen(
+                                widthMm = printerUiState.widthMm,
+                                heightMm = printerUiState.heightMm,
+                                dpi = printerUiState.dpi,
+                                mediaType = printerUiState.mediaType,
+                                printSpeed = printerUiState.printSpeed,
+                                darkness = printerUiState.darkness,
+                                onBack = { navController.popBackStack() },
+                                onSizeSelected = printerViewModel::selectPaperSize,
+                                onPrintSettingsChange = printerViewModel::updatePrintSettings,
+                            )
+                        }
+                        composable("maintenance") {
+                            MaintenanceScreen(
+                                connected = printerUiState.connectionState == ConnectionState.CONNECTED,
+                                isCalibrating = printerUiState.isCalibrating,
+                                isQueryingStatus = printerUiState.isQueryingStatus,
+                                printerStatus = printerUiState.printerStatus,
+                                errorMessage = printerUiState.errorMessage,
+                                onBack = { navController.popBackStack() },
+                                onCalibrate = printerViewModel::calibrateSensor,
+                                onQueryStatus = printerViewModel::queryPrinterStatus,
+                            )
+                        }
                         composable("designer") {
-                            val printerUiState by printerViewModel.uiState.collectAsState()
                             DesignerScreen(
                                 initialWidthMm = printerUiState.widthMm,
                                 initialHeightMm = printerUiState.heightMm,
