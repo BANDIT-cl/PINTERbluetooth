@@ -14,10 +14,15 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -26,10 +31,17 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.zplprinter.app.data.model.PrinterProfile
 import com.zplprinter.app.ui.components.ZplTopAppBar
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /** Conexión Bluetooth con la impresora y las dos pruebas de impresión. Equivalente a PrinterInfoActivity + DeviceListActivity. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -41,6 +53,8 @@ fun PrinterConnectionScreen(
     viewModel: PrinterViewModel,
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val savedProfiles by viewModel.savedProfiles.collectAsState()
+    var pendingForget by remember { mutableStateOf<PrinterProfile?>(null) }
 
     Scaffold(
         topBar = { ZplTopAppBar(title = "Impresora Bluetooth", onBack = onBack) }
@@ -60,6 +74,16 @@ fun PrinterConnectionScreen(
                         Button(onClick = onRequestPermission) { Text("Conceder permiso") }
                     }
                 }
+            }
+
+            if (savedProfiles.isNotEmpty()) {
+                SavedProfilesSection(
+                    profiles = savedProfiles,
+                    connectedAddress = uiState.selectedDevice?.takeIf { uiState.connectionState == ConnectionState.CONNECTED }?.address,
+                    connecting = uiState.connectionState == ConnectionState.CONNECTING,
+                    onConnect = viewModel::connectToSavedProfile,
+                    onForget = { pendingForget = it },
+                )
             }
 
             DeviceSection(
@@ -104,7 +128,75 @@ fun PrinterConnectionScreen(
             }
         }
     }
+
+    pendingForget?.let { profile ->
+        AlertDialog(
+            onDismissRequest = { pendingForget = null },
+            title = { Text("Olvidar impresora") },
+            text = { Text("¿Olvidar \"${profile.name}\"? Dejará de usarse automáticamente al compartir o imprimir.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.forgetProfile(profile)
+                    pendingForget = null
+                }) { Text("Olvidar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingForget = null }) { Text("Cancelar") }
+            },
+        )
+    }
 }
+
+/**
+ * Impresoras a las que el usuario ya se conectó alguna vez (no solo la última), para poder
+ * elegir entre varias sin tener que escanear/emparejar de nuevo. La más reciente es la que
+ * se usa automáticamente al imprimir desde "Compartir" o desde la importación de PDF.
+ */
+@Composable
+private fun SavedProfilesSection(
+    profiles: List<PrinterProfile>,
+    connectedAddress: String?,
+    connecting: Boolean,
+    onConnect: (PrinterProfile) -> Unit,
+    onForget: (PrinterProfile) -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Impresoras guardadas", style = MaterialTheme.typography.titleMedium)
+            profiles.forEachIndexed { index, profile ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(profile.name)
+                        Text(
+                            if (profile.macAddress == connectedAddress) {
+                                "Conectada ahora"
+                            } else if (index == 0) {
+                                "Se usa automáticamente · ${formatLastConnected(profile.lastConnectedAt)}"
+                            } else {
+                                formatLastConnected(profile.lastConnectedAt)
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (profile.macAddress != connectedAddress) {
+                        TextButton(onClick = { onConnect(profile) }, enabled = !connecting) { Text("Conectar") }
+                    }
+                    IconButton(onClick = { onForget(profile) }) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Olvidar \"${profile.name}\"")
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun formatLastConnected(epochMs: Long): String =
+    "Último uso: " + SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(epochMs))
 
 @Composable
 private fun DeviceSection(

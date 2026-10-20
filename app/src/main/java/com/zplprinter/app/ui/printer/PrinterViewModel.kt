@@ -8,6 +8,7 @@ import com.zplprinter.app.bluetooth.BluetoothPrinterManager
 import com.zplprinter.app.data.db.AppDatabase
 import com.zplprinter.app.data.model.Label
 import com.zplprinter.app.data.model.LabelElement
+import com.zplprinter.app.data.model.PrinterProfile
 import com.zplprinter.app.data.prefs.AppPreferences
 import com.zplprinter.app.data.repository.PrinterRepository
 import com.zplprinter.app.zpl.MediaType
@@ -15,8 +16,10 @@ import com.zplprinter.app.zpl.PrintSettings
 import com.zplprinter.app.zpl.ZplConstants
 import com.zplprinter.app.zpl.ZplGenerator
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -60,6 +63,10 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
         )
     )
     val uiState: StateFlow<PrinterUiState> = _uiState.asStateFlow()
+
+    /** Impresoras a las que el usuario se conectó alguna vez, para elegir entre varias (no solo "la última usada"). */
+    val savedProfiles: StateFlow<List<PrinterProfile>> = printerRepository.observeProfiles()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
         viewModelScope.launch {
@@ -170,6 +177,26 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
         }
+    }
+
+    /** Conecta a una impresora guardada (lista "Impresoras guardadas"), buscándola entre los dispositivos emparejados por su MAC. */
+    fun connectToSavedProfile(profile: PrinterProfile) {
+        val device = bluetoothManager.deviceForAddress(profile.macAddress)
+        if (device == null) {
+            _uiState.update {
+                it.copy(
+                    connectionState = ConnectionState.ERROR,
+                    errorMessage = "No se encontró \"${profile.name}\". Verifica que esté emparejada y encendida."
+                )
+            }
+            return
+        }
+        connect(device)
+    }
+
+    /** Olvida una impresora guardada (p. ej. si ya no se usa); no afecta el emparejamiento Bluetooth del sistema. */
+    fun forgetProfile(profile: PrinterProfile) {
+        viewModelScope.launch { printerRepository.forget(profile) }
     }
 
     fun disconnect() {
