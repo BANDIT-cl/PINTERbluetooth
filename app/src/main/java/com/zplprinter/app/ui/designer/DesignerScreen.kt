@@ -2,6 +2,7 @@ package com.zplprinter.app.ui.designer
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -20,12 +22,32 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Brush
+import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Collections
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.CropSquare
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.HorizontalRule
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.RotateRight
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.Undo
+import androidx.compose.material.icons.filled.ViewWeek
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -52,15 +74,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.zplprinter.app.ui.components.ZplTopAppBar
 import com.zplprinter.app.data.model.BarcodeSymbology
 import com.zplprinter.app.data.model.Label
 import com.zplprinter.app.data.model.LabelElement
 import com.zplprinter.app.data.model.TextDataType
+import com.zplprinter.app.ui.components.ZplTopAppBar
 import com.zplprinter.app.zpl.MediaType
 import com.zplprinter.app.zpl.PrintSettings
 import com.zplprinter.app.zpl.ZplGenerator
@@ -75,6 +98,7 @@ fun DesignerScreen(
     printSpeed: Int,
     darkness: Int,
     onBack: () -> Unit,
+    onOpenSettings: () -> Unit,
     onPrint: (String) -> Unit,
     viewModel: DesignerViewModel = viewModel(),
 ) {
@@ -83,40 +107,45 @@ fun DesignerScreen(
     val label by viewModel.label.collectAsState()
     val selectedId by viewModel.selectedElementId.collectAsState()
     val selectedElement = label.elements.firstOrNull { it.id == selectedId }
+    val canUndo by viewModel.canUndo.collectAsState()
+    val canRedo by viewModel.canRedo.collectAsState()
+    val isSaving by viewModel.isSaving.collectAsState()
+    val lastSaveOk by viewModel.lastSaveOk.collectAsState()
     var copies by rememberSaveable { mutableStateOf(1) }
+
+    fun printNow() {
+        val settings = PrintSettings(copies = copies, printSpeed = printSpeed, darkness = darkness, mediaType = mediaType)
+        onPrint(ZplGenerator.generate(label, settings))
+    }
 
     Scaffold(
         topBar = {
             ZplTopAppBar(
-                title = "Diseñador de etiquetas",
+                title = label.name.ifBlank { "Etiqueta" },
+                subtitle = "${label.widthMm.toInt()}x${label.heightMm.toInt()}(mm)",
                 onBack = onBack,
                 actions = {
-                    IconButton(
-                        onClick = {
-                            val settings = PrintSettings(
-                                copies = copies,
-                                printSpeed = printSpeed,
-                                darkness = darkness,
-                                mediaType = mediaType,
-                            )
-                            onPrint(ZplGenerator.generate(label, settings))
-                        }
-                    ) {
-                        Icon(Icons.Filled.Print, contentDescription = "Imprimir")
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Filled.Settings, contentDescription = "Ajustes de impresión")
                     }
                 }
             )
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
-            ToolbarRow(
-                onAddText = viewModel::addText,
-                onAddBarcode = viewModel::addBarcode,
-                onAddQr = viewModel::addQr,
-                onAddLine = viewModel::addLine,
+            EditActionsRow(
+                canUndo = canUndo,
+                canRedo = canRedo,
+                selectedElement = selectedElement,
+                onUndo = viewModel::undo,
+                onRedo = viewModel::redo,
+                onDuplicate = { selectedId?.let(viewModel::duplicateElement) },
+                onDelete = { selectedId?.let(viewModel::deleteElement) },
+                onToggleLock = { selectedId?.let(viewModel::toggleLock) },
+                onRotate = { selectedId?.let(viewModel::rotateElement) },
+                onScaleUp = { selectedId?.let { viewModel.scaleElement(it, grow = true) } },
+                onScaleDown = { selectedId?.let { viewModel.scaleElement(it, grow = false) } },
             )
-
-            CopiesRow(copies = copies, onCopiesChange = { copies = it.coerceIn(1, 99) })
 
             Box(
                 modifier = Modifier
@@ -130,34 +159,167 @@ fun DesignerScreen(
                     onSelect = viewModel::selectElement,
                     onMove = viewModel::moveElement,
                     onResize = viewModel::resizeElement,
+                    onDragStart = viewModel::beginCanvasTransform,
                 )
             }
 
             if (selectedElement != null) {
                 PropertyPanel(element = selectedElement, viewModel = viewModel)
             }
+
+            InsertionGrid(
+                onAddText = viewModel::addText,
+                onAddBarcode = viewModel::addBarcode,
+                onAddQr = viewModel::addQr,
+                onAddLine = viewModel::addLine,
+                onAddShape = viewModel::addShape,
+                onAddDate = viewModel::addDate,
+            )
+
+            CopiesRow(copies = copies, onCopiesChange = { copies = it.coerceIn(1, 99) })
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(
+                    onClick = viewModel::saveLabel,
+                    enabled = !isSaving,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    if (isSaving) {
+                        CircularProgressIndicator(modifier = Modifier.height(18.dp))
+                    } else {
+                        Icon(Icons.Filled.Save, contentDescription = null, modifier = Modifier.padding(end = 4.dp))
+                        Text("Guardar")
+                    }
+                }
+                Button(onClick = { printNow() }, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Filled.Print, contentDescription = null, modifier = Modifier.padding(end = 4.dp))
+                    Text("Imprimir")
+                }
+            }
+
+            lastSaveOk?.let { ok ->
+                Text(
+                    if (ok) "Etiqueta guardada en \"Mi etiqueta\"." else "No se pudo guardar la etiqueta.",
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    color = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Fila de 8 acciones rápidas sobre el elemento seleccionado (ícono + etiqueta, scroll
+ * horizontal), al estilo de la barra de edición de com.print.label: deshacer/rehacer,
+ * copiar, borrar, bloquear, rotar, ampliar, reducir.
+ */
+@Composable
+private fun EditActionsRow(
+    canUndo: Boolean,
+    canRedo: Boolean,
+    selectedElement: LabelElement?,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
+    onDuplicate: () -> Unit,
+    onDelete: () -> Unit,
+    onToggleLock: () -> Unit,
+    onRotate: () -> Unit,
+    onScaleUp: () -> Unit,
+    onScaleDown: () -> Unit,
+) {
+    val hasSelection = selectedElement != null
+    val locked = selectedElement?.locked == true
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        EditActionButton(Icons.Filled.Undo, "Deshacer", enabled = canUndo, onClick = onUndo)
+        EditActionButton(Icons.Filled.Redo, "Adelante", enabled = canRedo, onClick = onRedo)
+        EditActionButton(Icons.Filled.ContentCopy, "Copiar", enabled = hasSelection, onClick = onDuplicate)
+        EditActionButton(Icons.Filled.Delete, "Borrar", enabled = hasSelection, onClick = onDelete)
+        EditActionButton(
+            icon = if (locked) Icons.Filled.Lock else Icons.Filled.LockOpen,
+            label = if (locked) "Desbloq." else "Cierre",
+            enabled = hasSelection,
+            onClick = onToggleLock,
+        )
+        EditActionButton(Icons.Filled.RotateRight, "Rotar", enabled = hasSelection && !locked, onClick = onRotate)
+        EditActionButton(Icons.Filled.ZoomIn, "Ampliar", enabled = hasSelection && !locked, onClick = onScaleUp)
+        EditActionButton(Icons.Filled.ZoomOut, "Reducir", enabled = hasSelection && !locked, onClick = onScaleDown)
+    }
+}
+
+@Composable
+private fun EditActionButton(icon: ImageVector, label: String, enabled: Boolean, onClick: () -> Unit) {
+    val tint = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+    Column(
+        modifier = Modifier
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(icon, contentDescription = label, tint = tint)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = tint)
+    }
+}
+
+/**
+ * Grilla de 10 herramientas de inserción (2 filas x 5), al estilo de com.print.label.
+ * Las 4 que requieren cámara o un pipeline de bitmap que todavía no existe (Material,
+ * Imagen, Graffiti, Escaneo) se muestran atenuadas y no hacen nada al tocarlas.
+ */
+@Composable
+private fun InsertionGrid(
+    onAddText: () -> Unit,
+    onAddBarcode: () -> Unit,
+    onAddQr: () -> Unit,
+    onAddLine: () -> Unit,
+    onAddShape: () -> Unit,
+    onAddDate: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            InsertionTool(Icons.Filled.TextFields, "Texto", enabled = true, onClick = onAddText)
+            InsertionTool(Icons.Filled.ViewWeek, "1D", enabled = true, onClick = onAddBarcode)
+            InsertionTool(Icons.Filled.QrCode, "2D", enabled = true, onClick = onAddQr)
+            InsertionTool(Icons.Filled.HorizontalRule, "Línea", enabled = true, onClick = onAddLine)
+            InsertionTool(Icons.Filled.CropSquare, "Forma", enabled = true, onClick = onAddShape)
+        }
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            InsertionTool(Icons.Filled.CalendarToday, "Fecha", enabled = true, onClick = onAddDate)
+            InsertionTool(Icons.Filled.Collections, "Material", enabled = false, onClick = {})
+            InsertionTool(Icons.Filled.Image, "Imagen", enabled = false, onClick = {})
+            InsertionTool(Icons.Filled.Brush, "Graffiti", enabled = false, onClick = {})
+            InsertionTool(Icons.Filled.CameraAlt, "Escaneo", enabled = false, onClick = {})
         }
     }
 }
 
 @Composable
-private fun ToolbarRow(
-    onAddText: () -> Unit,
-    onAddBarcode: () -> Unit,
-    onAddQr: () -> Unit,
-    onAddLine: () -> Unit,
-) {
-    Row(
+private fun InsertionTool(icon: ImageVector, label: String, enabled: Boolean, onClick: () -> Unit) {
+    val tint = if (enabled) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+    }
+    Column(
         modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        OutlinedButton(onClick = onAddText) { Text("+ Texto") }
-        OutlinedButton(onClick = onAddBarcode) { Text("+ Código") }
-        OutlinedButton(onClick = onAddQr) { Text("+ QR") }
-        OutlinedButton(onClick = onAddLine) { Text("+ Línea") }
+        Icon(icon, contentDescription = label, tint = tint)
+        Spacer(Modifier.height(2.dp))
+        Text(label, style = MaterialTheme.typography.labelSmall, color = tint)
     }
 }
 
@@ -185,6 +347,7 @@ private fun LabelCanvas(
     onSelect: (String?) -> Unit,
     onMove: (String, Float, Float) -> Unit,
     onResize: (String, Float, Float) -> Unit,
+    onDragStart: () -> Unit,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val density = LocalDensity.current
@@ -210,6 +373,7 @@ private fun LabelCanvas(
                     onSelect = { onSelect(element.id) },
                     onMove = { dxMm, dyMm -> onMove(element.id, element.xMm + dxMm, element.yMm + dyMm) },
                     onResize = { dWidthMm, dHeightMm -> onResize(element.id, dWidthMm, dHeightMm) },
+                    onDragStart = onDragStart,
                 )
             }
         }
@@ -225,7 +389,7 @@ private fun elementSizeMm(element: LabelElement): Pair<Float, Float> = when (ele
     is LabelElement.QrElement ->
         (element.magnification * 5f) to (element.magnification * 5f)
     is LabelElement.ShapeElement ->
-        element.widthMm to element.thicknessMm.coerceAtLeast(1f)
+        element.widthMm to element.heightMm.coerceAtLeast(element.thicknessMm).coerceAtLeast(1f)
 }
 
 @Composable
@@ -236,6 +400,7 @@ private fun ElementView(
     onSelect: () -> Unit,
     onMove: (Float, Float) -> Unit,
     onResize: (Float, Float) -> Unit,
+    onDragStart: () -> Unit,
 ) {
     val density = LocalDensity.current
     val xDp = with(density) { (element.xMm * scalePxPerMm).toDp() }
@@ -251,17 +416,18 @@ private fun ElementView(
             .offset(xDp, yDp)
             .size(widthDp, heightDp)
             .border(2.dp, borderColor)
-            .pointerInput(element.id) {
-                detectDragGestures(onDragStart = { onSelect() }) { change, dragAmount ->
+            .pointerInput(element.id, element.locked) {
+                detectDragGestures(onDragStart = { onSelect(); if (!element.locked) onDragStart() }) { change, dragAmount ->
                     change.consume()
-                    onMove(dragAmount.x / scalePxPerMm, dragAmount.y / scalePxPerMm)
+                    if (!element.locked) onMove(dragAmount.x / scalePxPerMm, dragAmount.y / scalePxPerMm)
                 }
             }
     ) {
         when (element) {
             is LabelElement.TextElement -> {
                 val fontSizeSp = with(density) { (element.fontHeightMm * scalePxPerMm).toDp().toSp() }
-                Text(element.text, fontSize = fontSizeSp, maxLines = 1)
+                val preview = if (element.dataType == TextDataType.STATIC) element.text else element.resolvedText(0)
+                Text(preview, fontSize = fontSizeSp, maxLines = 1)
             }
             is LabelElement.BarcodeElement -> {
                 Text(
@@ -282,14 +448,20 @@ private fun ElementView(
             }
         }
 
-        if (isSelected) {
+        if (element.locked) {
+            Box(modifier = Modifier.align(Alignment.TopStart).size(16.dp).background(MaterialTheme.colorScheme.error)) {
+                Icon(Icons.Filled.Lock, contentDescription = "Bloqueado", tint = Color.White, modifier = Modifier.size(16.dp))
+            }
+        }
+
+        if (isSelected && !element.locked) {
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .size(24.dp)
                     .background(MaterialTheme.colorScheme.primary)
                     .pointerInput(element.id) {
-                        detectDragGestures { change, dragAmount ->
+                        detectDragGestures(onDragStart = { onDragStart() }) { change, dragAmount ->
                             change.consume()
                             onResize(dragAmount.x / scalePxPerMm, dragAmount.y / scalePxPerMm)
                         }
@@ -324,10 +496,6 @@ private fun PropertyPanel(element: LabelElement, viewModel: DesignerViewModel) {
                 PropertyTab.STYLE -> StyleTab(element, viewModel)
                 PropertyTab.ALIGN -> AlignTab(element, viewModel)
             }
-
-            OutlinedButton(onClick = { viewModel.deleteElement(element.id) }, modifier = Modifier.fillMaxWidth()) {
-                Text("Eliminar elemento")
-            }
         }
     }
 }
@@ -356,7 +524,7 @@ private fun ContentTab(element: LabelElement, viewModel: DesignerViewModel) {
                     widthText = text.filter(Char::isDigit)
                     widthText.toFloatOrNull()?.let { viewModel.updateLineWidth(element.id, it) }
                 },
-                label = { Text("Ancho de la línea (mm)") },
+                label = { Text("Ancho (mm)") },
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -380,6 +548,12 @@ private fun TextContentTab(element: LabelElement.TextElement, viewModel: Designe
                 onClick = { viewModel.updateTextDataType(element.id, TextDataType.COUNTER) },
                 modifier = Modifier.weight(1f),
             )
+            SegmentedOption(
+                label = "Fecha",
+                selected = element.dataType == TextDataType.DATE,
+                onClick = { viewModel.updateTextDataType(element.id, TextDataType.DATE) },
+                modifier = Modifier.weight(1f),
+            )
         }
 
         when (element.dataType) {
@@ -390,6 +564,10 @@ private fun TextContentTab(element: LabelElement.TextElement, viewModel: Designe
                 modifier = Modifier.fillMaxWidth(),
             )
             TextDataType.COUNTER -> CounterFields(element, viewModel)
+            TextDataType.DATE -> Text(
+                "Se imprime la fecha de hoy automáticamente (dd/MM/aaaa). Vista previa: ${element.resolvedText(0)}",
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
     }
 }
@@ -496,12 +674,22 @@ private fun StyleTab(element: LabelElement, viewModel: DesignerViewModel) {
 
 @Composable
 private fun AlignTab(element: LabelElement, viewModel: DesignerViewModel) {
-    OutlinedButton(
-        onClick = { viewModel.rotateElement(element.id) },
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Icon(Icons.Filled.RotateRight, contentDescription = null, modifier = Modifier.padding(end = 4.dp))
-        Text("Rotar 90° (actual: ${element.rotationDeg.toInt()}°)")
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(
+            onClick = { viewModel.rotateElement(element.id) },
+            enabled = !element.locked,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(Icons.Filled.RotateRight, contentDescription = null, modifier = Modifier.padding(end = 4.dp))
+            Text("Rotar 90° (actual: ${element.rotationDeg.toInt()}°)")
+        }
+        if (element.locked) {
+            Text(
+                "Elemento bloqueado: usa \"Desbloq.\" en la barra superior para moverlo, rotarlo o escalarlo.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

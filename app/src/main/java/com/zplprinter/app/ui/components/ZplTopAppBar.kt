@@ -1,5 +1,6 @@
 package com.zplprinter.app.ui.components
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -11,20 +12,33 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 
 /**
  * AppBar azul con título centrado, como el de com.print.label (fondo primary,
  * texto/iconos en blanco), en vez del AppBar blanco por defecto de Material3.
+ * Con [subtitle] replica el título de dos líneas de su pantalla de editor
+ * (nombre de la etiqueta + "AxB(mm)").
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ZplTopAppBar(
     title: String,
     onBack: (() -> Unit)? = null,
+    subtitle: String? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     CenterAlignedTopAppBar(
-        title = { Text(title) },
+        title = {
+            if (subtitle == null) {
+                Text(title)
+            } else {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(title)
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
         navigationIcon = {
             onBack?.let { back ->
                 IconButton(onClick = back) {

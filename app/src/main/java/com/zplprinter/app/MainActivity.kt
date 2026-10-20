@@ -129,6 +129,7 @@ class MainActivity : ComponentActivity() {
                                 printSpeed = printerUiState.printSpeed,
                                 darkness = printerUiState.darkness,
                                 onBack = { navController.popBackStack() },
+                                onOpenSettings = { navController.navigate("print_settings") },
                                 onPrint = { zpl -> printerViewModel.printSharedZpl(zpl) },
                             )
                         }

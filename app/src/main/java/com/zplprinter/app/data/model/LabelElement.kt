@@ -2,6 +2,9 @@ package com.zplprinter.app.data.model
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /** Simbologías de código de barras soportadas; cada una usa un comando ZPL distinto (^BC, ^B3, ^BE, ^BU, ^B2). */
 enum class BarcodeSymbology(val displayName: String) {
@@ -12,8 +15,8 @@ enum class BarcodeSymbology(val displayName: String) {
     ITF("Interleaved 2 of 5"),
 }
 
-/** Origen del contenido de un [LabelElement.TextElement]: texto fijo o un contador autoincremental. */
-enum class TextDataType { STATIC, COUNTER }
+/** Origen del contenido de un [LabelElement.TextElement]: texto fijo, un contador autoincremental o la fecha actual. */
+enum class TextDataType { STATIC, COUNTER, DATE }
 
 /**
  * Un elemento dibujado en el lienzo del diseñador. Las coordenadas y
@@ -26,9 +29,12 @@ sealed class LabelElement {
     abstract val xMm: Float
     abstract val yMm: Float
     abstract val rotationDeg: Float
+    /** Si está bloqueado, el lienzo ignora arrastres de mover/redimensionar y los botones Rotar/Ampliar/Reducir. */
+    abstract val locked: Boolean
 
     abstract fun withPosition(newXMm: Float, newYMm: Float): LabelElement
     abstract fun withRotation(newRotationDeg: Float): LabelElement
+    abstract fun withLocked(locked: Boolean): LabelElement
 
     @Serializable
     @SerialName("text")
@@ -37,6 +43,7 @@ sealed class LabelElement {
         override val xMm: Float,
         override val yMm: Float,
         override val rotationDeg: Float = 0f,
+        override val locked: Boolean = false,
         val text: String,
         val fontHeightMm: Float = 5f,
         val fontWidthMm: Float = 5f,
@@ -50,13 +57,15 @@ sealed class LabelElement {
     ) : LabelElement() {
         override fun withPosition(newXMm: Float, newYMm: Float) = copy(xMm = newXMm, yMm = newYMm)
         override fun withRotation(newRotationDeg: Float) = copy(rotationDeg = newRotationDeg)
+        override fun withLocked(locked: Boolean) = copy(locked = locked)
 
-        /** El texto a imprimir en la copia [copyIndex] (0-based): fijo, o el valor del contador en ese paso. */
+        /** El texto a imprimir en la copia [copyIndex] (0-based): fijo, el valor del contador en ese paso, o la fecha de hoy. */
         fun resolvedText(copyIndex: Int): String = when (dataType) {
             TextDataType.STATIC -> text
             TextDataType.COUNTER -> (counterStart + copyIndex * counterStep)
                 .toString()
                 .padStart(counterDigits, '0')
+            TextDataType.DATE -> SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
         }
     }
 
@@ -67,6 +76,7 @@ sealed class LabelElement {
         override val xMm: Float,
         override val yMm: Float,
         override val rotationDeg: Float = 0f,
+        override val locked: Boolean = false,
         val data: String,
         val heightMm: Float = 15f,
         val moduleWidthDots: Float = 2f,
@@ -75,6 +85,7 @@ sealed class LabelElement {
     ) : LabelElement() {
         override fun withPosition(newXMm: Float, newYMm: Float) = copy(xMm = newXMm, yMm = newYMm)
         override fun withRotation(newRotationDeg: Float) = copy(rotationDeg = newRotationDeg)
+        override fun withLocked(locked: Boolean) = copy(locked = locked)
     }
 
     @Serializable
@@ -84,11 +95,13 @@ sealed class LabelElement {
         override val xMm: Float,
         override val yMm: Float,
         override val rotationDeg: Float = 0f,
+        override val locked: Boolean = false,
         val data: String,
         val magnification: Float = 5f,
     ) : LabelElement() {
         override fun withPosition(newXMm: Float, newYMm: Float) = copy(xMm = newXMm, yMm = newYMm)
         override fun withRotation(newRotationDeg: Float) = copy(rotationDeg = newRotationDeg)
+        override fun withLocked(locked: Boolean) = copy(locked = locked)
     }
 
     @Serializable
@@ -98,11 +111,13 @@ sealed class LabelElement {
         override val xMm: Float,
         override val yMm: Float,
         override val rotationDeg: Float = 0f,
+        override val locked: Boolean = false,
         val widthMm: Float,
         val heightMm: Float,
         val thicknessMm: Float = 0.5f,
     ) : LabelElement() {
         override fun withPosition(newXMm: Float, newYMm: Float) = copy(xMm = newXMm, yMm = newYMm)
         override fun withRotation(newRotationDeg: Float) = copy(rotationDeg = newRotationDeg)
+        override fun withLocked(locked: Boolean) = copy(locked = locked)
     }
 }
