@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CropSquare
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.HorizontalRule
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Lock
@@ -46,6 +47,7 @@ import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material.icons.filled.ViewWeek
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomOut
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -65,6 +67,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -94,6 +97,7 @@ import com.zplprinter.app.zpl.ZplGenerator
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DesignerScreen(
+    initialLabelId: String?,
     initialWidthMm: Float,
     initialHeightMm: Float,
     initialDpi: Int,
@@ -105,7 +109,13 @@ fun DesignerScreen(
     onPrint: (String) -> Unit,
     viewModel: DesignerViewModel = viewModel(),
 ) {
-    LaunchedEffect(Unit) { viewModel.initializeSizeIfNeeded(initialWidthMm, initialHeightMm, initialDpi) }
+    LaunchedEffect(Unit) {
+        if (initialLabelId != null) {
+            viewModel.loadLabel(initialLabelId)
+        } else {
+            viewModel.initializeSizeIfNeeded(initialWidthMm, initialHeightMm, initialDpi)
+        }
+    }
 
     val label by viewModel.label.collectAsState()
     val selectedId by viewModel.selectedElementId.collectAsState()
@@ -115,6 +125,7 @@ fun DesignerScreen(
     val isSaving by viewModel.isSaving.collectAsState()
     val lastSaveOk by viewModel.lastSaveOk.collectAsState()
     var copies by rememberSaveable { mutableStateOf(1) }
+    var showRenameDialog by rememberSaveable { mutableStateOf(false) }
 
     fun printNow() {
         val settings = PrintSettings(copies = copies, printSpeed = printSpeed, darkness = darkness, mediaType = mediaType)
@@ -128,6 +139,9 @@ fun DesignerScreen(
                 subtitle = "${label.widthMm.toInt()}x${label.heightMm.toInt()}(mm)",
                 onBack = onBack,
                 actions = {
+                    IconButton(onClick = { showRenameDialog = true }) {
+                        Icon(Icons.Filled.Edit, contentDescription = "Cambiar nombre de la etiqueta")
+                    }
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Filled.Settings, contentDescription = "Ajustes de impresión")
                     }
@@ -209,7 +223,7 @@ fun DesignerScreen(
 
             lastSaveOk?.let { ok ->
                 Text(
-                    if (ok) "Etiqueta guardada en \"Mi etiqueta\"." else "No se pudo guardar la etiqueta.",
+                    if (ok) "Etiqueta guardada. Puedes encontrarla en \"Mis etiquetas\"." else "No se pudo guardar la etiqueta.",
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                     color = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall,
@@ -217,6 +231,40 @@ fun DesignerScreen(
             }
         }
     }
+
+    if (showRenameDialog) {
+        RenameLabelDialog(
+            currentName = label.name,
+            onConfirm = { newName ->
+                viewModel.updateName(newName)
+                showRenameDialog = false
+            },
+            onDismiss = { showRenameDialog = false },
+        )
+    }
+}
+
+@Composable
+private fun RenameLabelDialog(currentName: String, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+    var text by rememberSaveable { mutableStateOf(currentName) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Nombre de la etiqueta") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(text.ifBlank { "Etiqueta" }) }) { Text("Guardar") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar") }
+        },
+    )
 }
 
 /**

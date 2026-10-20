@@ -55,6 +55,19 @@ class DesignerViewModel(application: Application) : AndroidViewModel(application
         _label.update { it.copy(widthMm = widthMm, heightMm = heightMm, dpi = dpi) }
     }
 
+    /** Carga una etiqueta guardada por id (p. ej. al abrirla desde "Mis etiquetas"), una sola vez por pantalla. */
+    fun loadLabel(id: String) {
+        if (initialized) return
+        initialized = true
+        viewModelScope.launch {
+            labelRepository.getLabel(id)?.let { loaded -> _label.value = loaded }
+        }
+    }
+
+    fun updateName(newName: String) {
+        _label.update { it.copy(name = newName, updatedAt = System.currentTimeMillis()) }
+    }
+
     fun selectElement(id: String?) {
         _selectedElementId.value = id
     }

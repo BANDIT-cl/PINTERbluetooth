@@ -81,7 +81,7 @@ fun PdfImportScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
-                "Elegí el PDF de la etiqueta (p. ej. la de MercadoLibre). Se recorta y " +
+                "Elige el PDF de la etiqueta (p. ej. la de MercadoLibre). Se recorta y " +
                     "redimensiona automáticamente, manteniendo la proporción, a tu papel actual " +
                     "de ${widthMm.toInt()}x${heightMm.toInt()}mm.",
                 style = MaterialTheme.typography.bodyMedium,

@@ -19,11 +19,14 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.zplprinter.app.ui.designer.DesignerScreen
 import com.zplprinter.app.ui.home.HomeScreen
+import com.zplprinter.app.ui.labels.SavedLabelsScreen
 import com.zplprinter.app.ui.pdfimport.PdfImportScreen
 import com.zplprinter.app.ui.printer.ConnectionState
 import com.zplprinter.app.ui.printer.MaintenanceScreen
@@ -97,6 +100,14 @@ class MainActivity : ComponentActivity() {
                                 onOpenPrintSettings = { navController.navigate("print_settings") },
                                 onOpenMaintenance = { navController.navigate("maintenance") },
                                 onOpenPdfImport = { navController.navigate("pdf_import") },
+                                onOpenSavedLabels = { navController.navigate("saved_labels") },
+                            )
+                        }
+                        composable("saved_labels") {
+                            SavedLabelsScreen(
+                                onBack = { navController.popBackStack() },
+                                onOpenLabel = { id -> navController.navigate("designer?labelId=$id") },
+                                onCreateNew = { navController.navigate("designer") },
                             )
                         }
                         composable("pdf_import") {
@@ -147,8 +158,18 @@ class MainActivity : ComponentActivity() {
                                 onQueryStatus = printerViewModel::queryPrinterStatus,
                             )
                         }
-                        composable("designer") {
+                        composable(
+                            route = "designer?labelId={labelId}",
+                            arguments = listOf(
+                                navArgument("labelId") {
+                                    type = NavType.StringType
+                                    nullable = true
+                                    defaultValue = null
+                                }
+                            ),
+                        ) { backStackEntry ->
                             DesignerScreen(
+                                initialLabelId = backStackEntry.arguments?.getString("labelId"),
                                 initialWidthMm = printerUiState.widthMm,
                                 initialHeightMm = printerUiState.heightMm,
                                 initialDpi = printerUiState.dpi,
