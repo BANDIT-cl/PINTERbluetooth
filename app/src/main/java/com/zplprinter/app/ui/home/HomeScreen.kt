@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -31,6 +32,7 @@ fun HomeScreen(
     onOpenPrinter: () -> Unit,
     onOpenPrintSettings: () -> Unit,
     onOpenMaintenance: () -> Unit,
+    onOpenPdfImport: () -> Unit,
 ) {
     Scaffold(
         topBar = { ZplTopAppBar(title = "Impresora de etiquetas ZPL") }
@@ -57,6 +59,12 @@ fun HomeScreen(
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
                 onClick = onOpenPrinter,
+            )
+            NavRow(
+                title = "Importar etiqueta PDF",
+                subtitle = "PDF de MercadoLibre u otro, redimensionado a tu papel",
+                icon = Icons.Filled.PictureAsPdf,
+                onClick = onOpenPdfImport,
             )
             NavRow(
                 title = "Ajustes de impresión",

@@ -41,6 +41,14 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/octet-stream" />
             </intent-filter>
+
+            <!-- Permite recibir una etiqueta en PDF (p. ej. compartida desde la app de MercadoLibre
+                 o el navegador) para recortarla y redimensionarla automaticamente al papel cargado -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/pdf" />
+            </intent-filter>
         </activity>
     </application>
 </manifest>

@@ -124,6 +124,49 @@ object ZplGenerator {
         return "^FO$x,$y^GB$w,$h,$thickness^FS"
     }
 
+    /**
+     * Construye una etiqueta ^XA...^XZ con una sola imagen monocroma a pantalla completa (^GFA),
+     * del tamaño exacto [widthDots]x[heightDots]. La usa la importación de PDF (p. ej. etiquetas
+     * de MercadoLibre ya recortadas y redimensionadas por [com.zplprinter.app.pdf.PdfLabelConverter])
+     * para imprimir directamente, sin pasar por el modelo [Label] de elementos editables.
+     */
+    fun buildImageLabel(
+        widthDots: Int,
+        heightDots: Int,
+        packedMono: ByteArray,
+        printSettings: PrintSettings = PrintSettings(),
+    ): String {
+        val bytesPerRow = (widthDots + 7) / 8
+        val totalBytes = bytesPerRow * heightDots
+        return buildString {
+            append("^XA")
+            append("^MN${printSettings.mediaType.zplChar}")
+            printSettings.printSpeed?.let { append("^PR$it") }
+            printSettings.darkness?.let { append("^MD$it") }
+            append("^PW$widthDots")
+            append("^LL$heightDots")
+            append("^FO0,0")
+            append("^GFA,$totalBytes,$totalBytes,$bytesPerRow,")
+            append(packedMono.toZplHex())
+            append("^FS")
+            append("^PQ${printSettings.copies.coerceAtLeast(1)}")
+            append("^XZ")
+        }
+    }
+
+    private val HEX_CHARS = "0123456789ABCDEF".toCharArray()
+
+    /** Conversión a hex ASCII (formato esperado por ^GFA) con tabla precalculada: evitar String.format por byte importa con etiquetas de cientos de KB. */
+    private fun ByteArray.toZplHex(): String {
+        val chars = CharArray(size * 2)
+        for (i in indices) {
+            val v = this[i].toInt() and 0xFF
+            chars[i * 2] = HEX_CHARS[v ushr 4]
+            chars[i * 2 + 1] = HEX_CHARS[v and 0x0F]
+        }
+        return String(chars)
+    }
+
     /** ZPL usa ^ y ~ como prefijos de control; se eliminan del contenido del usuario para no romper el stream. */
     private fun escape(text: String): String = text.replace("^", "").replace("~", "")
 

@@ -24,6 +24,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.zplprinter.app.ui.designer.DesignerScreen
 import com.zplprinter.app.ui.home.HomeScreen
+import com.zplprinter.app.ui.pdfimport.PdfImportScreen
 import com.zplprinter.app.ui.printer.ConnectionState
 import com.zplprinter.app.ui.printer.MaintenanceScreen
 import com.zplprinter.app.ui.printer.PrinterConnectionScreen
@@ -38,6 +39,9 @@ class MainActivity : ComponentActivity() {
 
     /** Texto ZPL recibido por Intent.ACTION_SEND, con un id único para disparar el LaunchedEffect una sola vez por envío. */
     private val incomingZplState = mutableStateOf<Pair<String, Long>?>(null)
+
+    /** PDF (p. ej. etiqueta de MercadoLibre) recibido por Intent.ACTION_SEND, pendiente de abrir en PdfImportScreen. */
+    private val incomingPdfState = mutableStateOf<Pair<Uri, Long>?>(null)
 
     private val requiredBluetoothPermissions: Array<String>
         get() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -61,6 +65,7 @@ class MainActivity : ComponentActivity() {
 
             val printerViewModel: PrinterViewModel = viewModel()
             val incoming by incomingZplState
+            val incomingPdf by incomingPdfState
 
             val navController = rememberNavController()
 
@@ -69,6 +74,12 @@ class MainActivity : ComponentActivity() {
                     navController.navigate("printer")
                     printerViewModel.printSharedZpl(zpl)
                     incomingZplState.value = null
+                }
+            }
+
+            LaunchedEffect(incomingPdf) {
+                incomingPdf?.let {
+                    navController.navigate("pdf_import")
                 }
             }
 
@@ -85,6 +96,22 @@ class MainActivity : ComponentActivity() {
                                 onOpenPrinter = { navController.navigate("printer") },
                                 onOpenPrintSettings = { navController.navigate("print_settings") },
                                 onOpenMaintenance = { navController.navigate("maintenance") },
+                                onOpenPdfImport = { navController.navigate("pdf_import") },
+                            )
+                        }
+                        composable("pdf_import") {
+                            PdfImportScreen(
+                                initialUri = incomingPdf?.first,
+                                onInitialUriConsumed = { incomingPdfState.value = null },
+                                widthMm = printerUiState.widthMm,
+                                heightMm = printerUiState.heightMm,
+                                dpi = printerUiState.dpi,
+                                printSettings = printerViewModel.currentPrintSettings(),
+                                isPrinting = printerUiState.isPrinting,
+                                lastPrintOk = printerUiState.lastPrintOk,
+                                printerErrorMessage = printerUiState.errorMessage,
+                                onBack = { navController.popBackStack() },
+                                onPrint = { zpl -> printerViewModel.printSharedZpl(zpl) },
                             )
                         }
                         composable("printer") {
@@ -145,9 +172,17 @@ class MainActivity : ComponentActivity() {
         handleIncomingIntent(intent)
     }
 
-    /** Extrae el ZPL de un Intent.ACTION_SEND (texto plano o archivo adjunto) y lo encola para imprimir. */
+    /** Extrae el ZPL (o PDF) de un Intent.ACTION_SEND y lo encola para imprimir o importar. */
     private fun handleIncomingIntent(intent: Intent?) {
         if (intent == null || intent.action != Intent.ACTION_SEND) return
+
+        if (intent.type == "application/pdf") {
+            val uri = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+            if (uri != null) {
+                incomingPdfState.value = uri to System.nanoTime()
+            }
+            return
+        }
 
         val directText = intent.getStringExtra(Intent.EXTRA_TEXT)
         if (!directText.isNullOrBlank()) {
