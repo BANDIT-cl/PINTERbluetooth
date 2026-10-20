@@ -3,6 +3,7 @@ package com.zplprinter.app.zpl
 import com.zplprinter.app.data.model.BarcodeSymbology
 import com.zplprinter.app.data.model.Label
 import com.zplprinter.app.data.model.LabelElement
+import com.zplprinter.app.data.model.TextDataType
 import kotlin.math.roundToInt
 
 /**
@@ -33,8 +34,29 @@ object ZplGenerator {
         }
     }
 
-    /** Traduce una [Label] completa (texto, código de barras, QR, líneas/cajas) a ZPL. */
+    /**
+     * Traduce una [Label] completa (texto, código de barras, QR, líneas/cajas) a ZPL.
+     *
+     * Si ningún [LabelElement.TextElement] usa un contador, genera un solo bloque
+     * `^XA...^XZ` y deja que la propia impresora repita la copia con `^PQ` (más rápido:
+     * un solo envío por Bluetooth). Si hay un contador, cada copia necesita texto distinto,
+     * así que se genera un bloque `^XA...^XZ` por copia, cada uno con el valor incrementado.
+     */
     fun generate(label: Label, printSettings: PrintSettings = PrintSettings()): String {
+        val copies = printSettings.copies.coerceAtLeast(1)
+        val hasCounter = label.elements.any {
+            it is LabelElement.TextElement && it.dataType == TextDataType.COUNTER
+        }
+        return if (hasCounter) {
+            buildString {
+                repeat(copies) { copyIndex -> append(buildLabelBlock(label, printSettings, copyIndex, copiesInBlock = 1)) }
+            }
+        } else {
+            buildLabelBlock(label, printSettings, copyIndex = 0, copiesInBlock = copies)
+        }
+    }
+
+    private fun buildLabelBlock(label: Label, printSettings: PrintSettings, copyIndex: Int, copiesInBlock: Int): String {
         val widthDots = ZplConstants.mmToDots(label.widthMm, label.dpi)
         val heightDots = ZplConstants.mmToDots(label.heightMm, label.dpi)
 
@@ -46,26 +68,26 @@ object ZplGenerator {
             printSettings.darkness?.let { append("^MD$it") }
             append("^PW$widthDots")
             append("^LL$heightDots")
-            label.elements.forEach { element -> append(renderElement(element, label.dpi)) }
-            append("^PQ${printSettings.copies.coerceAtLeast(1)}")
+            label.elements.forEach { element -> append(renderElement(element, label.dpi, copyIndex)) }
+            append("^PQ$copiesInBlock")
             append("^XZ")
         }
     }
 
-    private fun renderElement(element: LabelElement, dpi: Int): String = when (element) {
-        is LabelElement.TextElement -> renderText(element, dpi)
+    private fun renderElement(element: LabelElement, dpi: Int, copyIndex: Int): String = when (element) {
+        is LabelElement.TextElement -> renderText(element, dpi, copyIndex)
         is LabelElement.BarcodeElement -> renderBarcode(element, dpi)
         is LabelElement.QrElement -> renderQr(element, dpi)
         is LabelElement.ShapeElement -> renderShape(element, dpi)
     }
 
-    private fun renderText(e: LabelElement.TextElement, dpi: Int): String {
+    private fun renderText(e: LabelElement.TextElement, dpi: Int, copyIndex: Int): String {
         val x = ZplConstants.mmToDots(e.xMm, dpi)
         val y = ZplConstants.mmToDots(e.yMm, dpi)
         val h = ZplConstants.mmToDots(e.fontHeightMm, dpi)
         val w = ZplConstants.mmToDots(e.fontWidthMm, dpi)
         val orientation = orientationChar(e.rotationDeg)
-        return "^FO$x,$y^A0$orientation,$h,$w^FD${escape(e.text)}^FS"
+        return "^FO$x,$y^A0$orientation,$h,$w^FD${escape(e.resolvedText(copyIndex))}^FS"
     }
 
     private fun renderBarcode(e: LabelElement.BarcodeElement, dpi: Int): String {

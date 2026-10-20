@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.RotateRight
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -35,6 +36,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -55,6 +60,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.zplprinter.app.data.model.BarcodeSymbology
 import com.zplprinter.app.data.model.Label
 import com.zplprinter.app.data.model.LabelElement
+import com.zplprinter.app.data.model.TextDataType
 import com.zplprinter.app.zpl.MediaType
 import com.zplprinter.app.zpl.PrintSettings
 import com.zplprinter.app.zpl.ZplGenerator
@@ -297,55 +303,218 @@ private fun ElementView(
     }
 }
 
+/** Pestañas del panel de propiedades, al estilo Contenido/Estilo/Alinear de apps de etiquetado comerciales. */
+private enum class PropertyTab(val label: String) { CONTENT("Contenido"), STYLE("Estilo"), ALIGN("Alinear") }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PropertyPanel(element: LabelElement, viewModel: DesignerViewModel) {
+    var selectedTab by rememberSaveable(element.id) { mutableStateOf(PropertyTab.CONTENT) }
+
     Card(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            when (element) {
-                is LabelElement.TextElement -> OutlinedTextField(
-                    value = element.text,
-                    onValueChange = { viewModel.updateText(element.id, it) },
-                    label = { Text("Texto") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                is LabelElement.BarcodeElement -> {
-                    OutlinedTextField(
-                        value = element.data,
-                        onValueChange = { viewModel.updateBarcodeData(element.id, it) },
-                        label = { Text("Datos del código de barras") },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    BarcodeSymbologyDropdown(
-                        selected = element.symbology,
-                        onSelected = { viewModel.updateBarcodeSymbology(element.id, it) },
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            TabRow(selectedTabIndex = selectedTab.ordinal) {
+                PropertyTab.entries.forEach { tab ->
+                    Tab(
+                        selected = selectedTab == tab,
+                        onClick = { selectedTab = tab },
+                        text = { Text(tab.label) },
                     )
                 }
-                is LabelElement.QrElement -> OutlinedTextField(
-                    value = element.data,
-                    onValueChange = { viewModel.updateQrData(element.id, it) },
-                    label = { Text("Contenido del QR") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                is LabelElement.ShapeElement -> Text("Línea (ancho ${element.widthMm.toInt()} mm)")
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = { viewModel.rotateElement(element.id) },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Filled.RotateRight, contentDescription = null, modifier = Modifier.padding(end = 4.dp))
-                    Text("Rotar 90° (${element.rotationDeg.toInt()}°)")
-                }
-                OutlinedButton(
-                    onClick = { viewModel.deleteElement(element.id) },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Eliminar")
-                }
+            when (selectedTab) {
+                PropertyTab.CONTENT -> ContentTab(element, viewModel)
+                PropertyTab.STYLE -> StyleTab(element, viewModel)
+                PropertyTab.ALIGN -> AlignTab(element, viewModel)
+            }
+
+            OutlinedButton(onClick = { viewModel.deleteElement(element.id) }, modifier = Modifier.fillMaxWidth()) {
+                Text("Eliminar elemento")
             }
         }
+    }
+}
+
+@Composable
+private fun ContentTab(element: LabelElement, viewModel: DesignerViewModel) {
+    when (element) {
+        is LabelElement.TextElement -> TextContentTab(element, viewModel)
+        is LabelElement.BarcodeElement -> OutlinedTextField(
+            value = element.data,
+            onValueChange = { viewModel.updateBarcodeData(element.id, it) },
+            label = { Text("Datos del código de barras") },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        is LabelElement.QrElement -> OutlinedTextField(
+            value = element.data,
+            onValueChange = { viewModel.updateQrData(element.id, it) },
+            label = { Text("Contenido del QR") },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        is LabelElement.ShapeElement -> {
+            var widthText by rememberSaveable(element.id) { mutableStateOf(element.widthMm.toInt().toString()) }
+            OutlinedTextField(
+                value = widthText,
+                onValueChange = { text ->
+                    widthText = text.filter(Char::isDigit)
+                    widthText.toFloatOrNull()?.let { viewModel.updateLineWidth(element.id, it) }
+                },
+                label = { Text("Ancho de la línea (mm)") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun TextContentTab(element: LabelElement.TextElement, viewModel: DesignerViewModel) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Tipo de datos", style = MaterialTheme.typography.labelMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SegmentedOption(
+                label = "Texto",
+                selected = element.dataType == TextDataType.STATIC,
+                onClick = { viewModel.updateTextDataType(element.id, TextDataType.STATIC) },
+                modifier = Modifier.weight(1f),
+            )
+            SegmentedOption(
+                label = "Contador",
+                selected = element.dataType == TextDataType.COUNTER,
+                onClick = { viewModel.updateTextDataType(element.id, TextDataType.COUNTER) },
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        when (element.dataType) {
+            TextDataType.STATIC -> OutlinedTextField(
+                value = element.text,
+                onValueChange = { viewModel.updateText(element.id, it) },
+                label = { Text("Texto") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            TextDataType.COUNTER -> CounterFields(element, viewModel)
+        }
+    }
+}
+
+/**
+ * Campos del contador autoincremental: cada copia impresa sustituye este texto por
+ * `inicio + copia*incremento`, rellenado a `dígitos` posiciones. Requiere imprimir N
+ * bloques ZPL separados (ver [com.zplprinter.app.zpl.ZplGenerator.generate]), no una
+ * sola etiqueta repetida con `^PQ`.
+ */
+@Composable
+private fun CounterFields(element: LabelElement.TextElement, viewModel: DesignerViewModel) {
+    var startText by rememberSaveable(element.id) { mutableStateOf(element.counterStart.toString()) }
+    var stepText by rememberSaveable(element.id) { mutableStateOf(element.counterStep.toString()) }
+    var digitsText by rememberSaveable(element.id) { mutableStateOf(element.counterDigits.toString()) }
+
+    fun commit(start: String = startText, step: String = stepText, digits: String = digitsText) {
+        viewModel.updateCounterConfig(
+            element.id,
+            start = start.toIntOrNull() ?: element.counterStart,
+            step = step.toIntOrNull() ?: element.counterStep,
+            digits = digits.toIntOrNull() ?: element.counterDigits,
+        )
+    }
+
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+            value = startText,
+            onValueChange = { startText = it.filter { c -> c.isDigit() }; commit(start = startText) },
+            label = { Text("Inicio") },
+            modifier = Modifier.weight(1f),
+        )
+        OutlinedTextField(
+            value = stepText,
+            onValueChange = { stepText = it.filter { c -> c.isDigit() }; commit(step = stepText) },
+            label = { Text("Incremento") },
+            modifier = Modifier.weight(1f),
+        )
+        OutlinedTextField(
+            value = digitsText,
+            onValueChange = { digitsText = it.filter(Char::isDigit); commit(digits = digitsText) },
+            label = { Text("Dígitos") },
+            modifier = Modifier.weight(1f),
+        )
+    }
+    Text(
+        "Vista previa: ${element.resolvedText(0)}, ${element.resolvedText(1)}, ${element.resolvedText(2)}…",
+        style = MaterialTheme.typography.bodySmall,
+    )
+}
+
+@Composable
+private fun StyleTab(element: LabelElement, viewModel: DesignerViewModel) {
+    when (element) {
+        is LabelElement.TextElement -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Alto de letra: ${element.fontHeightMm.toInt()} mm")
+            Slider(
+                value = element.fontHeightMm,
+                onValueChange = { viewModel.updateFontSize(element.id, it, element.fontWidthMm) },
+                valueRange = 2f..50f,
+            )
+            Text("Ancho de letra: ${element.fontWidthMm.toInt()} mm")
+            Slider(
+                value = element.fontWidthMm,
+                onValueChange = { viewModel.updateFontSize(element.id, element.fontHeightMm, it) },
+                valueRange = 2f..50f,
+            )
+        }
+        is LabelElement.BarcodeElement -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            BarcodeSymbologyDropdown(
+                selected = element.symbology,
+                onSelected = { viewModel.updateBarcodeSymbology(element.id, it) },
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Mostrar texto legible")
+                Switch(
+                    checked = element.humanReadable,
+                    onCheckedChange = { viewModel.updateBarcodeHumanReadable(element.id, it) },
+                )
+            }
+        }
+        is LabelElement.QrElement -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Magnificación: ${element.magnification.toInt()}")
+            Slider(
+                value = element.magnification,
+                onValueChange = { viewModel.updateQrMagnification(element.id, it) },
+                valueRange = 1f..10f,
+            )
+        }
+        is LabelElement.ShapeElement -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Grosor: ${"%.1f".format(element.thicknessMm)} mm")
+            Slider(
+                value = element.thicknessMm,
+                onValueChange = { viewModel.updateLineThickness(element.id, it) },
+                valueRange = 0.2f..5f,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AlignTab(element: LabelElement, viewModel: DesignerViewModel) {
+    OutlinedButton(
+        onClick = { viewModel.rotateElement(element.id) },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Icon(Icons.Filled.RotateRight, contentDescription = null, modifier = Modifier.padding(end = 4.dp))
+        Text("Rotar 90° (actual: ${element.rotationDeg.toInt()}°)")
+    }
+}
+
+@Composable
+private fun SegmentedOption(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    if (selected) {
+        Button(onClick = onClick, modifier = modifier) { Text(label) }
+    } else {
+        OutlinedButton(onClick = onClick, modifier = modifier) { Text(label) }
     }
 }
 

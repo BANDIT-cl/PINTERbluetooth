@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import com.zplprinter.app.data.model.BarcodeSymbology
 import com.zplprinter.app.data.model.Label
 import com.zplprinter.app.data.model.LabelElement
+import com.zplprinter.app.data.model.TextDataType
 import com.zplprinter.app.zpl.ZplConstants
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -135,9 +136,53 @@ class DesignerViewModel : ViewModel() {
         }
     }
 
+    fun updateBarcodeHumanReadable(id: String, humanReadable: Boolean) {
+        updateElement(id) { element ->
+            (element as? LabelElement.BarcodeElement)?.copy(humanReadable = humanReadable) ?: element
+        }
+    }
+
+    fun updateQrMagnification(id: String, magnification: Float) {
+        updateElement(id) { element ->
+            (element as? LabelElement.QrElement)?.copy(magnification = magnification.coerceIn(1f, 10f)) ?: element
+        }
+    }
+
+    fun updateLineThickness(id: String, thicknessMm: Float) {
+        updateElement(id) { element ->
+            (element as? LabelElement.ShapeElement)?.copy(thicknessMm = thicknessMm.coerceIn(0.2f, 5f)) ?: element
+        }
+    }
+
     fun updateText(id: String, newText: String) {
         updateElement(id) { element ->
             (element as? LabelElement.TextElement)?.copy(text = newText) ?: element
+        }
+    }
+
+    fun updateTextDataType(id: String, dataType: TextDataType) {
+        updateElement(id) { element ->
+            (element as? LabelElement.TextElement)?.copy(dataType = dataType) ?: element
+        }
+    }
+
+    /** Configura el contador autoincremental de un [LabelElement.TextElement]. No cambia [dataType]. */
+    fun updateCounterConfig(id: String, start: Int, step: Int, digits: Int) {
+        updateElement(id) { element ->
+            (element as? LabelElement.TextElement)?.copy(
+                counterStart = start,
+                counterStep = step,
+                counterDigits = digits.coerceIn(1, 10),
+            ) ?: element
+        }
+    }
+
+    fun updateFontSize(id: String, fontHeightMm: Float, fontWidthMm: Float) {
+        updateElement(id) { element ->
+            (element as? LabelElement.TextElement)?.copy(
+                fontHeightMm = fontHeightMm.coerceIn(2f, 50f),
+                fontWidthMm = fontWidthMm.coerceIn(2f, 50f),
+            ) ?: element
         }
     }
 
