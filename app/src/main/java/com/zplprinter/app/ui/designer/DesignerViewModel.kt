@@ -129,13 +129,22 @@ class DesignerViewModel(application: Application) : AndroidViewModel(application
         updateElement(id) { element -> element.withLocked(!element.locked) }
     }
 
-    fun moveElement(id: String, newXMm: Float, newYMm: Float) {
+    /**
+     * Mueve el elemento seleccionado arrastrando en el lienzo. `dXMm`/`dYMm` son el delta
+     * de ese frame de arrastre (no la posición absoluta): el gesto en Compose no vuelve a
+     * componer `ElementView` en cada frame, así que la posición "actual" solo es confiable
+     * leída aquí desde `_label.value` (la fuente de verdad), no desde el closure capturado
+     * por el `pointerInput` del lienzo. Calcular la posición nueva ahí (como se hacía antes)
+     * usaba una posición base obsoleta y el elemento terminaba sin moverse bien o fuera
+     * de los límites de la etiqueta.
+     */
+    fun moveElement(id: String, dXMm: Float, dYMm: Float) {
         updateElement(id) { element ->
             if (element.locked) {
                 element
             } else {
-                val clampedX = newXMm.coerceIn(0f, _label.value.widthMm)
-                val clampedY = newYMm.coerceIn(0f, _label.value.heightMm)
+                val clampedX = (element.xMm + dXMm).coerceIn(0f, _label.value.widthMm)
+                val clampedY = (element.yMm + dYMm).coerceIn(0f, _label.value.heightMm)
                 element.withPosition(clampedX, clampedY)
             }
         }

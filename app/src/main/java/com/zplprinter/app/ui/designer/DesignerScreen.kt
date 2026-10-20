@@ -371,7 +371,7 @@ private fun LabelCanvas(
                     scalePxPerMm = scalePxPerMm,
                     isSelected = element.id == selectedId,
                     onSelect = { onSelect(element.id) },
-                    onMove = { dxMm, dyMm -> onMove(element.id, element.xMm + dxMm, element.yMm + dyMm) },
+                    onMove = { dxMm, dyMm -> onMove(element.id, dxMm, dyMm) },
                     onResize = { dWidthMm, dHeightMm -> onResize(element.id, dWidthMm, dHeightMm) },
                     onDragStart = onDragStart,
                 )
