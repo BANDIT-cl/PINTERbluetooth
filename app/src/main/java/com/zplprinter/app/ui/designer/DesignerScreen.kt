@@ -1,5 +1,7 @@
 package com.zplprinter.app.ui.designer
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -88,9 +90,13 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import com.zplprinter.app.data.model.BarcodeSymbology
 import com.zplprinter.app.data.model.Label
 import com.zplprinter.app.data.model.LabelElement
@@ -138,6 +144,22 @@ fun DesignerScreen(
 
     val pickPhotoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         pendingPhotoUri = uri
+    }
+
+    val context = LocalContext.current
+    val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
+        result.contents?.let { data -> viewModel.addScannedCode(data, result.formatName) }
+    }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) scanLauncher.launch(buildScanOptions())
+    }
+    fun startScan() {
+        val hasCameraPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        if (hasCameraPermission) {
+            scanLauncher.launch(buildScanOptions())
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
     }
 
     fun printNow() {
@@ -210,6 +232,7 @@ fun DesignerScreen(
                 onAddDate = viewModel::addDate,
                 onAddImage = { pickPhotoLauncher.launch("image/*") },
                 onAddDoodle = { showDoodleDialog = true },
+                onAddScan = { startScan() },
             )
 
             CopiesRow(copies = copies, onCopiesChange = { copies = it.coerceIn(1, 99) })
@@ -365,8 +388,7 @@ private fun EditActionButton(icon: ImageVector, label: String, enabled: Boolean,
 
 /**
  * Grilla de 10 herramientas de inserción (2 filas x 5), al estilo de com.print.label.
- * "Material" (biblioteca de íconos/clipart) y "Escaneo" (leer código con la cámara) todavía
- * no están implementadas y se muestran atenuadas.
+ * "Material" (biblioteca de íconos/clipart) todavía no está implementada y se muestra atenuada.
  */
 @Composable
 private fun InsertionGrid(
@@ -378,6 +400,7 @@ private fun InsertionGrid(
     onAddDate: () -> Unit,
     onAddImage: () -> Unit,
     onAddDoodle: () -> Unit,
+    onAddScan: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -392,9 +415,17 @@ private fun InsertionGrid(
             InsertionTool(Icons.Filled.Collections, "Material", enabled = false, onClick = {})
             InsertionTool(Icons.Filled.Image, "Imagen", enabled = true, onClick = onAddImage)
             InsertionTool(Icons.Filled.Brush, "Graffiti", enabled = true, onClick = onAddDoodle)
-            InsertionTool(Icons.Filled.CameraAlt, "Escaneo", enabled = false, onClick = {})
+            InsertionTool(Icons.Filled.CameraAlt, "Escaneo", enabled = true, onClick = onAddScan)
         }
     }
+}
+
+/** Formatos de 1D y 2D habituales en etiquetas de despacho; ZXing decide solo cuál matchea el código. */
+private fun buildScanOptions(): ScanOptions = ScanOptions().apply {
+    setDesiredBarcodeFormats(ScanOptions.ALL_CODE_TYPES)
+    setPrompt("Apunta al código de barras o QR")
+    setBeepEnabled(true)
+    setOrientationLocked(true)
 }
 
 @Composable

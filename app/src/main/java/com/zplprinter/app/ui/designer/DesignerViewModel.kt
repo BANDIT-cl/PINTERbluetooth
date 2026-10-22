@@ -129,6 +129,25 @@ class DesignerViewModel(application: Application) : AndroidViewModel(application
         )
     }
 
+    /**
+     * Inserta lo leído por la cámara ("Escaneo"): un QR si [formatName] es "QR_CODE" (el nombre
+     * que entrega ZXing), o un código de barras con la simbología que mejor matchea si no.
+     */
+    fun addScannedCode(data: String, formatName: String?) {
+        if (formatName == "QR_CODE") {
+            addElement(LabelElement.QrElement(id = newId(), xMm = 5f, yMm = 5f, data = data))
+            return
+        }
+        val symbology = when (formatName) {
+            "CODE_39" -> BarcodeSymbology.CODE39
+            "EAN_13" -> BarcodeSymbology.EAN13
+            "UPC_A" -> BarcodeSymbology.UPC_A
+            "ITF" -> BarcodeSymbology.ITF
+            else -> BarcodeSymbology.CODE128
+        }
+        addElement(LabelElement.BarcodeElement(id = newId(), xMm = 5f, yMm = 5f, data = data, symbology = symbology))
+    }
+
     /** Herramienta "Fecha": texto que siempre resuelve a la fecha de hoy al imprimir. */
     fun addDate() {
         addElement(

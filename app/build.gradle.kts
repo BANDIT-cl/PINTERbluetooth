@@ -62,6 +62,10 @@ dependencies {
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
 
+    // Escaneo de código de barras/QR con la cámara ("Escaneo" en el diseñador): trae su propia
+    // Activity de captura lista para usar vía ActivityResultContract, sin UI propia que mantener.
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
