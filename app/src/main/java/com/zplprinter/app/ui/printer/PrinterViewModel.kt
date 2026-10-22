@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.zplprinter.app.bluetooth.BluetoothPrinterManager
 import com.zplprinter.app.data.db.AppDatabase
+import com.zplprinter.app.data.model.ConnectionType
 import com.zplprinter.app.data.model.Label
 import com.zplprinter.app.data.model.LabelElement
 import com.zplprinter.app.data.model.PrintRecord
@@ -35,6 +36,10 @@ data class PrinterUiState(
     val isScanning: Boolean = false,
     val selectedDevice: BluetoothDevice? = null,
     val connectionState: ConnectionState = ConnectionState.DISCONNECTED,
+    /** A qué transporte corresponde [connectionState]/[selectedDevice]; solo significativo si no está DISCONNECTED. */
+    val connectionType: ConnectionType = ConnectionType.BLUETOOTH,
+    /** Etiqueta del extremo Wi-Fi activo o en curso (p. ej. "192.168.1.100:9100"), para mostrar en la UI sin exponer BluetoothDevice. */
+    val wifiTarget: String? = null,
     val errorMessage: String? = null,
     val widthMm: Float = 100f,
     val heightMm: Float = 100f,
@@ -194,13 +199,19 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
     fun connect(device: BluetoothDevice) {
         stopScan()
         _uiState.update {
-            it.copy(selectedDevice = device, connectionState = ConnectionState.CONNECTING, errorMessage = null)
+            it.copy(
+                selectedDevice = device,
+                connectionType = ConnectionType.BLUETOOTH,
+                wifiTarget = null,
+                connectionState = ConnectionState.CONNECTING,
+                errorMessage = null,
+            )
         }
         viewModelScope.launch {
             val result = bluetoothManager.connect(device)
             if (result.isSuccess) {
                 val name = bluetoothManager.nameOf(device)
-                printerRepository.rememberConnected(device.address, name)
+                printerRepository.rememberConnected(device.address, name, ConnectionType.BLUETOOTH)
                 _uiState.update {
                     it.copy(connectionState = ConnectionState.CONNECTED, rememberedPrinterName = name)
                 }
@@ -215,19 +226,65 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    /** Conecta a una impresora guardada (lista "Impresoras guardadas"), buscándola entre los dispositivos emparejados por su MAC. */
-    fun connectToSavedProfile(profile: PrinterProfile) {
-        val device = bluetoothManager.deviceForAddress(profile.macAddress)
-        if (device == null) {
-            _uiState.update {
-                it.copy(
-                    connectionState = ConnectionState.ERROR,
-                    errorMessage = "No se encontró \"${profile.name}\". Verifica que esté emparejada y encendida."
-                )
-            }
-            return
+    /** Conecta por Wi-Fi a [ipAddress]:[port] y la recuerda con [name] para futuras reconexiones automáticas. */
+    fun connectWifi(ipAddress: String, port: Int, name: String) {
+        stopScan()
+        val target = "$ipAddress:$port"
+        _uiState.update {
+            it.copy(
+                selectedDevice = null,
+                connectionType = ConnectionType.WIFI,
+                wifiTarget = target,
+                connectionState = ConnectionState.CONNECTING,
+                errorMessage = null,
+            )
         }
-        connect(device)
+        viewModelScope.launch {
+            val result = bluetoothManager.connectWifi(ipAddress, port)
+            if (result.isSuccess) {
+                val resolvedName = name.ifBlank { target }
+                printerRepository.rememberConnected(target, resolvedName, ConnectionType.WIFI)
+                _uiState.update {
+                    it.copy(connectionState = ConnectionState.CONNECTED, rememberedPrinterName = resolvedName)
+                }
+            } else {
+                _uiState.update {
+                    it.copy(
+                        connectionState = ConnectionState.ERROR,
+                        errorMessage = result.exceptionOrNull()?.message ?: "No se pudo conectar a $target"
+                    )
+                }
+            }
+        }
+    }
+
+    /** Conecta a una impresora guardada (lista "Impresoras guardadas"), por Bluetooth (buscándola por MAC) o Wi-Fi (reabriendo el socket a su ip:puerto). */
+    fun connectToSavedProfile(profile: PrinterProfile) {
+        when (profile.connectionType) {
+            ConnectionType.WIFI -> {
+                val (ip, port) = parseWifiAddress(profile.macAddress)
+                if (ip == null) {
+                    _uiState.update {
+                        it.copy(connectionState = ConnectionState.ERROR, errorMessage = "Dirección Wi-Fi inválida para \"${profile.name}\".")
+                    }
+                    return
+                }
+                connectWifi(ip, port, profile.name)
+            }
+            ConnectionType.BLUETOOTH -> {
+                val device = bluetoothManager.deviceForAddress(profile.macAddress)
+                if (device == null) {
+                    _uiState.update {
+                        it.copy(
+                            connectionState = ConnectionState.ERROR,
+                            errorMessage = "No se encontró \"${profile.name}\". Verifica que esté emparejada y encendida."
+                        )
+                    }
+                    return
+                }
+                connect(device)
+            }
+        }
     }
 
     /** Olvida una impresora guardada (p. ej. si ya no se usa); no afecta el emparejamiento Bluetooth del sistema. */
@@ -237,7 +294,7 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
 
     fun disconnect() {
         bluetoothManager.disconnect()
-        _uiState.update { it.copy(connectionState = ConnectionState.DISCONNECTED, selectedDevice = null) }
+        _uiState.update { it.copy(connectionState = ConnectionState.DISCONNECTED, selectedDevice = null, wifiTarget = null) }
     }
 
     /**
@@ -332,6 +389,41 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
+     * Si no hay una conexión activa, reconecta a la última impresora recordada (Bluetooth o
+     * Wi-Fi, según [PrinterProfile.connectionType]) y actualiza el estado de conexión. Devuelve
+     * un mensaje de error si falló, o `null` si ya había conexión o se logró reconectar.
+     */
+    private suspend fun ensureConnectedToLastUsed(description: String): String? {
+        if (_uiState.value.connectionState == ConnectionState.CONNECTED) return null
+
+        val lastUsed = printerRepository.getLastUsed()
+            ?: return "No hay ninguna impresora recordada. Abre la app, conecta tu impresora una vez y vuelve a intentarlo."
+
+        val connectResult = when (lastUsed.connectionType) {
+            ConnectionType.WIFI -> {
+                val (ip, port) = parseWifiAddress(lastUsed.macAddress)
+                if (ip == null) return "Dirección Wi-Fi inválida para '${lastUsed.name}'."
+                _uiState.update { it.copy(connectionType = ConnectionType.WIFI, wifiTarget = lastUsed.macAddress, connectionState = ConnectionState.CONNECTING) }
+                bluetoothManager.connectWifi(ip, port)
+            }
+            ConnectionType.BLUETOOTH -> {
+                val device = bluetoothManager.deviceForAddress(lastUsed.macAddress)
+                    ?: return "No se encontró la impresora '${lastUsed.name}'. Verifica que esté emparejada y encendida."
+                _uiState.update { it.copy(selectedDevice = device, connectionType = ConnectionType.BLUETOOTH, connectionState = ConnectionState.CONNECTING) }
+                bluetoothManager.connect(device)
+            }
+        }
+
+        return if (connectResult.isFailure) {
+            _uiState.update { it.copy(connectionState = ConnectionState.ERROR) }
+            connectResult.exceptionOrNull()?.message ?: "No se pudo conectar a '${lastUsed.name}'"
+        } else {
+            _uiState.update { it.copy(connectionState = ConnectionState.CONNECTED, rememberedPrinterName = lastUsed.name) }
+            null
+        }
+    }
+
+    /**
      * Imprime ZPL recibido desde otra app (menú "Compartir"), desde el diseñador o desde la
      * importación de PDF. Reconecta a la última impresora recordada si es necesario; no
      * requiere que el usuario haya abierto antes la pantalla de configuración en esta sesión.
@@ -341,39 +433,11 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             _uiState.update { it.copy(isPrinting = true, lastPrintOk = null, errorMessage = null) }
 
-            if (_uiState.value.connectionState != ConnectionState.CONNECTED) {
-                val lastUsed = printerRepository.getLastUsed()
-                if (lastUsed == null) {
-                    val message = "No hay ninguna impresora recordada. Abre la app, conecta tu Xprinter una vez y vuelve a intentarlo."
-                    _uiState.update { it.copy(isPrinting = false, lastPrintOk = false, errorMessage = message) }
-                    printRecordRepository.record(description, null, false, message)
-                    return@launch
-                }
-                val device = bluetoothManager.deviceForAddress(lastUsed.macAddress)
-                if (device == null) {
-                    val message = "No se encontró la impresora '${lastUsed.name}'. Verifica que esté emparejada y encendida."
-                    _uiState.update { it.copy(isPrinting = false, lastPrintOk = false, errorMessage = message) }
-                    printRecordRepository.record(description, lastUsed.name, false, message)
-                    return@launch
-                }
-                _uiState.update {
-                    it.copy(selectedDevice = device, connectionState = ConnectionState.CONNECTING)
-                }
-                val connectResult = bluetoothManager.connect(device)
-                if (connectResult.isFailure) {
-                    val message = connectResult.exceptionOrNull()?.message ?: "No se pudo conectar a '${lastUsed.name}'"
-                    _uiState.update {
-                        it.copy(
-                            isPrinting = false,
-                            connectionState = ConnectionState.ERROR,
-                            lastPrintOk = false,
-                            errorMessage = message,
-                        )
-                    }
-                    printRecordRepository.record(description, lastUsed.name, false, message)
-                    return@launch
-                }
-                _uiState.update { it.copy(connectionState = ConnectionState.CONNECTED) }
+            val connectError = ensureConnectedToLastUsed(description)
+            if (connectError != null) {
+                _uiState.update { it.copy(isPrinting = false, lastPrintOk = false, errorMessage = connectError) }
+                printRecordRepository.record(description, null, false, connectError)
+                return@launch
             }
 
             val printerName = _uiState.value.rememberedPrinterName
@@ -400,39 +464,11 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             _uiState.update { it.copy(isPrinting = true, lastPrintOk = null, errorMessage = null) }
 
-            if (_uiState.value.connectionState != ConnectionState.CONNECTED) {
-                val lastUsed = printerRepository.getLastUsed()
-                if (lastUsed == null) {
-                    val message = "No hay ninguna impresora recordada. Abre la app, conecta tu impresora una vez y vuelve a intentarlo."
-                    _uiState.update { it.copy(isPrinting = false, lastPrintOk = false, errorMessage = message) }
-                    printRecordRepository.record(description, null, false, message)
-                    return@launch
-                }
-                val device = bluetoothManager.deviceForAddress(lastUsed.macAddress)
-                if (device == null) {
-                    val message = "No se encontró la impresora '${lastUsed.name}'. Verifica que esté emparejada y encendida."
-                    _uiState.update { it.copy(isPrinting = false, lastPrintOk = false, errorMessage = message) }
-                    printRecordRepository.record(description, lastUsed.name, false, message)
-                    return@launch
-                }
-                _uiState.update {
-                    it.copy(selectedDevice = device, connectionState = ConnectionState.CONNECTING)
-                }
-                val connectResult = bluetoothManager.connect(device)
-                if (connectResult.isFailure) {
-                    val message = connectResult.exceptionOrNull()?.message ?: "No se pudo conectar a '${lastUsed.name}'"
-                    _uiState.update {
-                        it.copy(
-                            isPrinting = false,
-                            connectionState = ConnectionState.ERROR,
-                            lastPrintOk = false,
-                            errorMessage = message,
-                        )
-                    }
-                    printRecordRepository.record(description, lastUsed.name, false, message)
-                    return@launch
-                }
-                _uiState.update { it.copy(connectionState = ConnectionState.CONNECTED) }
+            val connectError = ensureConnectedToLastUsed(description)
+            if (connectError != null) {
+                _uiState.update { it.copy(isPrinting = false, lastPrintOk = false, errorMessage = connectError) }
+                printRecordRepository.record(description, null, false, connectError)
+                return@launch
             }
 
             val printerName = _uiState.value.rememberedPrinterName
@@ -454,5 +490,15 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
     override fun onCleared() {
         bluetoothManager.disconnect()
         super.onCleared()
+    }
+
+    private companion object {
+        /** Separa "ip:puerto" (formato guardado en [PrinterProfile.macAddress] para Wi-Fi); null si no matchea. */
+        fun parseWifiAddress(target: String): Pair<String?, Int> {
+            val parts = target.split(":")
+            val ip = parts.getOrNull(0)?.takeIf { it.isNotBlank() }
+            val port = parts.getOrNull(1)?.toIntOrNull() ?: BluetoothPrinterManager.DEFAULT_WIFI_PORT
+            return ip to port
+        }
     }
 }

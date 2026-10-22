@@ -68,7 +68,7 @@ fun HomeScreen(
                 onClick = onOpenSavedLabels,
             )
             NavRow(
-                title = "Impresora Bluetooth",
+                title = "Impresora",
                 subtitle = connectionSubtitle(connectionState, connectedDeviceLabel),
                 icon = Icons.Filled.Bluetooth,
                 iconTint = if (connectionState == ConnectionState.CONNECTED) {

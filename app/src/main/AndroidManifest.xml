@@ -11,6 +11,9 @@
     <!-- Escanear un código de barras/QR con la cámara para autocompletar un elemento -->
     <uses-permission android:name="android.permission.CAMERA" />
 
+    <!-- Conexión Wi-Fi directa a la impresora (socket TCP al puerto 9100) -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <uses-feature android:name="android.hardware.bluetooth" android:required="true" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />

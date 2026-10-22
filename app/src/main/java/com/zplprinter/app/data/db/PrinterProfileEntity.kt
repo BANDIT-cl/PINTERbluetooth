@@ -8,4 +8,6 @@ data class PrinterProfileEntity(
     @PrimaryKey val macAddress: String,
     val name: String,
     val lastConnectedAt: Long,
+    /** Nombre de [com.zplprinter.app.data.model.ConnectionType] ("BLUETOOTH" o "WIFI"). */
+    val connectionType: String = "BLUETOOTH",
 )

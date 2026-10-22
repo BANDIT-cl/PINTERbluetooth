@@ -25,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -33,17 +34,20 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.zplprinter.app.bluetooth.BluetoothPrinterManager
+import com.zplprinter.app.data.model.ConnectionType
 import com.zplprinter.app.data.model.PrinterProfile
 import com.zplprinter.app.ui.components.ZplTopAppBar
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Conexión Bluetooth con la impresora y las dos pruebas de impresión. Equivalente a PrinterInfoActivity + DeviceListActivity. */
+/** Conexión con la impresora (Bluetooth o Wi-Fi) y las dos pruebas de impresión. Equivalente a PrinterInfoActivity + DeviceListActivity. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PrinterConnectionScreen(
@@ -57,7 +61,7 @@ fun PrinterConnectionScreen(
     var pendingForget by remember { mutableStateOf<PrinterProfile?>(null) }
 
     Scaffold(
-        topBar = { ZplTopAppBar(title = "Impresora Bluetooth", onBack = onBack) }
+        topBar = { ZplTopAppBar(title = "Impresora", onBack = onBack) }
     ) { padding ->
         Column(
             modifier = Modifier
@@ -79,7 +83,10 @@ fun PrinterConnectionScreen(
             if (savedProfiles.isNotEmpty()) {
                 SavedProfilesSection(
                     profiles = savedProfiles,
-                    connectedAddress = uiState.selectedDevice?.takeIf { uiState.connectionState == ConnectionState.CONNECTED }?.address,
+                    connectedAddress = when (uiState.connectionType) {
+                        ConnectionType.BLUETOOTH -> uiState.selectedDevice?.takeIf { uiState.connectionState == ConnectionState.CONNECTED }?.address
+                        ConnectionType.WIFI -> uiState.wifiTarget?.takeIf { uiState.connectionState == ConnectionState.CONNECTED }
+                    },
                     connecting = uiState.connectionState == ConnectionState.CONNECTING,
                     onConnect = viewModel::connectToSavedProfile,
                     onForget = { pendingForget = it },
@@ -93,6 +100,12 @@ fun PrinterConnectionScreen(
                 onScan = viewModel::startScan,
                 onStopScan = viewModel::stopScan,
                 onSelectDevice = viewModel::connect,
+                onDisconnect = viewModel::disconnect,
+            )
+
+            WifiSection(
+                uiState = uiState,
+                onConnect = viewModel::connectWifi,
                 onDisconnect = viewModel::disconnect,
             )
 
@@ -170,7 +183,7 @@ private fun SavedProfilesSection(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(profile.name)
+                        Text(profile.name + if (profile.connectionType == ConnectionType.WIFI) " (Wi-Fi)" else "")
                         Text(
                             if (profile.macAddress == connectedAddress) {
                                 "Conectada ahora"
@@ -227,12 +240,13 @@ private fun DeviceSection(
                 }
             }
 
-            when (uiState.connectionState) {
-                ConnectionState.CONNECTED -> {
+            val isBluetoothTransport = uiState.connectionType == ConnectionType.BLUETOOTH
+            when {
+                uiState.connectionState == ConnectionState.CONNECTED && isBluetoothTransport -> {
                     Text("Conectado a: ${safeDeviceLabel(uiState.selectedDevice)}")
                     OutlinedButton(onClick = onDisconnect) { Text("Desconectar") }
                 }
-                ConnectionState.CONNECTING -> {
+                uiState.connectionState == ConnectionState.CONNECTING && isBluetoothTransport -> {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(modifier = Modifier.height(20.dp))
                         Spacer(Modifier.width(8.dp))
@@ -294,6 +308,70 @@ internal fun DeviceListColumn(devices: List<BluetoothDevice>, onSelectDevice: (B
             ) {
                 Text(safeDeviceLabel(device))
                 TextButton(onClick = { onSelectDevice(device) }) { Text("Conectar") }
+            }
+        }
+    }
+}
+
+/**
+ * Conexión por Wi-Fi: la mayoría de las impresoras de red no se "descubren" (no hay un
+ * equivalente simple al escaneo Bluetooth), así que se pide la IP directamente, como hace
+ * com.print.label. El puerto 9100 ("raw"/JetDirect) es el valor por defecto que usan casi
+ * todas las impresoras térmicas con interfaz de red.
+ */
+@Composable
+private fun WifiSection(
+    uiState: PrinterUiState,
+    onConnect: (ipAddress: String, port: Int, name: String) -> Unit,
+    onDisconnect: () -> Unit,
+) {
+    var ipAddress by rememberSaveable { mutableStateOf("") }
+    var portText by rememberSaveable { mutableStateOf(BluetoothPrinterManager.DEFAULT_WIFI_PORT.toString()) }
+    val connectedViaWifi = uiState.connectionType == ConnectionType.WIFI && uiState.connectionState == ConnectionState.CONNECTED
+    val connectingViaWifi = uiState.connectionType == ConnectionType.WIFI && uiState.connectionState == ConnectionState.CONNECTING
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Impresora Wi-Fi", style = MaterialTheme.typography.titleMedium)
+
+            if (connectedViaWifi) {
+                Text("Conectado a: ${uiState.wifiTarget}")
+                OutlinedButton(onClick = onDisconnect) { Text("Desconectar") }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedTextField(
+                        value = ipAddress,
+                        onValueChange = { ipAddress = it },
+                        label = { Text("Dirección IP") },
+                        placeholder = { Text("192.168.1.100") },
+                        singleLine = true,
+                        modifier = Modifier.weight(2f),
+                    )
+                    OutlinedTextField(
+                        value = portText,
+                        onValueChange = { portText = it.filter(Char::isDigit) },
+                        label = { Text("Puerto") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Button(
+                    onClick = {
+                        val port = portText.toIntOrNull() ?: BluetoothPrinterManager.DEFAULT_WIFI_PORT
+                        onConnect(ipAddress.trim(), port, ipAddress.trim())
+                    },
+                    enabled = ipAddress.isNotBlank() && !connectingViaWifi,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    if (connectingViaWifi) {
+                        CircularProgressIndicator(modifier = Modifier.height(20.dp))
+                    } else {
+                        Text("Conectar por Wi-Fi")
+                    }
+                }
             }
         }
     }

@@ -14,11 +14,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.util.UUID
 
 /**
- * Maneja la conexión Bluetooth clásica (perfil SPP) con la impresora y el
- * envío de comandos ZPL crudos. No solicita permisos: eso es responsabilidad
+ * Maneja la conexión con la impresora, Bluetooth clásico (perfil SPP) o Wi-Fi (socket TCP
+ * directo, puerto 9100 habitual en impresoras térmicas), y el envío de comandos ZPL/TSPL
+ * crudos por el transporte que esté activo. No solicita permisos: eso es responsabilidad
  * de la capa de UI antes de llamar a estos métodos.
  */
 class BluetoothPrinterManager(private val context: Context) {
@@ -27,7 +32,17 @@ class BluetoothPrinterManager(private val context: Context) {
         (context.getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager)?.adapter
 
     private var socket: BluetoothSocket? = null
+    private var wifiSocket: Socket? = null
     private var discoveryReceiver: BroadcastReceiver? = null
+
+    /** Stream de salida del transporte activo (Bluetooth o Wi-Fi), el que esté conectado. */
+    private val activeOutputStream: OutputStream?
+        get() = socket?.takeIf { it.isConnected }?.outputStream
+            ?: wifiSocket?.takeIf { it.isConnected }?.getOutputStream()
+
+    private val activeInputStream: InputStream?
+        get() = socket?.takeIf { it.isConnected }?.inputStream
+            ?: wifiSocket?.takeIf { it.isConnected }?.getInputStream()
 
     val isBluetoothSupported: Boolean get() = adapter != null
     val isBluetoothEnabled: Boolean get() = adapter?.isEnabled == true
@@ -107,6 +122,7 @@ class BluetoothPrinterManager(private val context: Context) {
     @SuppressLint("MissingPermission")
     suspend fun connect(device: BluetoothDevice): Result<Unit> = withContext(Dispatchers.IO) {
         try {
+            closeQuietly()
             adapter?.cancelDiscovery()
             val newSocket = device.createRfcommSocketToServiceRecord(SPP_UUID)
             newSocket.connect()
@@ -121,6 +137,27 @@ class BluetoothPrinterManager(private val context: Context) {
         }
     }
 
+    /**
+     * Conecta por Wi-Fi a una impresora que escucha en [ipAddress]:[port] (9100 es el puerto
+     * "raw" estándar de impresión térmica/ZPL en red, soportado por la mayoría de las
+     * impresoras con interfaz de red, a diferencia del Bluetooth SPP que no tiene puerto).
+     */
+    suspend fun connectWifi(ipAddress: String, port: Int): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            closeQuietly()
+            val newSocket = Socket()
+            newSocket.connect(InetSocketAddress(ipAddress, port), WIFI_CONNECT_TIMEOUT_MS)
+            wifiSocket = newSocket
+            Result.success(Unit)
+        } catch (e: IOException) {
+            closeQuietly()
+            Result.failure(e)
+        } catch (e: IllegalArgumentException) {
+            closeQuietly()
+            Result.failure(e)
+        }
+    }
+
     @SuppressLint("MissingPermission")
     fun nameOf(device: BluetoothDevice): String =
         try {
@@ -130,15 +167,13 @@ class BluetoothPrinterManager(private val context: Context) {
         }
 
     suspend fun sendZpl(zpl: String): Result<Unit> = withContext(Dispatchers.IO) {
-        val activeSocket = socket
-        if (activeSocket == null || !activeSocket.isConnected) {
-            return@withContext Result.failure(IllegalStateException("No hay conexión con la impresora"))
-        }
+        val out = activeOutputStream
+            ?: return@withContext Result.failure(IllegalStateException("No hay conexión con la impresora"))
         try {
             // La impresora interpreta ^FD como UTF-8 porque ZplGenerator antepone ^CI28;
             // sin ese comando, acentos y ñ llegarían corruptos.
-            activeSocket.outputStream.write(zpl.toByteArray(Charsets.UTF_8))
-            activeSocket.outputStream.flush()
+            out.write(zpl.toByteArray(Charsets.UTF_8))
+            out.flush()
             Result.success(Unit)
         } catch (e: IOException) {
             Result.failure(e)
@@ -154,13 +189,11 @@ class BluetoothPrinterManager(private val context: Context) {
      * codificar con cualquier otro charset (p. ej. UTF-8) corrompería esos bytes.
      */
     suspend fun sendTspl(command: String): Result<Unit> = withContext(Dispatchers.IO) {
-        val activeSocket = socket
-        if (activeSocket == null || !activeSocket.isConnected) {
-            return@withContext Result.failure(IllegalStateException("No hay conexión con la impresora"))
-        }
+        val out = activeOutputStream
+            ?: return@withContext Result.failure(IllegalStateException("No hay conexión con la impresora"))
         try {
-            activeSocket.outputStream.write(command.toByteArray(Charsets.ISO_8859_1))
-            activeSocket.outputStream.flush()
+            out.write(command.toByteArray(Charsets.ISO_8859_1))
+            out.flush()
             Result.success(Unit)
         } catch (e: IOException) {
             Result.failure(e)
@@ -176,15 +209,14 @@ class BluetoothPrinterManager(private val context: Context) {
         command: String,
         timeoutMs: Long = 1500,
     ): Result<String> = withContext(Dispatchers.IO) {
-        val activeSocket = socket
-        if (activeSocket == null || !activeSocket.isConnected) {
-            return@withContext Result.failure(IllegalStateException("No hay conexión con la impresora"))
-        }
+        val out = activeOutputStream
+            ?: return@withContext Result.failure(IllegalStateException("No hay conexión con la impresora"))
         try {
-            activeSocket.outputStream.write(command.toByteArray(Charsets.US_ASCII))
-            activeSocket.outputStream.flush()
+            out.write(command.toByteArray(Charsets.US_ASCII))
+            out.flush()
 
-            val input = activeSocket.inputStream
+            val input = activeInputStream
+                ?: return@withContext Result.failure(IllegalStateException("No hay conexión con la impresora"))
             val buffer = ByteArray(512)
             val response = StringBuilder()
             val deadline = System.currentTimeMillis() + timeoutMs
@@ -206,6 +238,8 @@ class BluetoothPrinterManager(private val context: Context) {
         }
     }
 
+    val isConnected: Boolean get() = socket?.isConnected == true || wifiSocket?.isConnected == true
+
     fun disconnect() {
         stopDiscovery()
         closeQuietly()
@@ -218,10 +252,21 @@ class BluetoothPrinterManager(private val context: Context) {
             // ignorado: el socket ya puede estar cerrado por el otro extremo
         }
         socket = null
+        try {
+            wifiSocket?.close()
+        } catch (_: IOException) {
+            // ignorado: el socket ya puede estar cerrado por el otro extremo
+        }
+        wifiSocket = null
     }
 
     companion object {
         /** UUID estándar del perfil SPP (Serial Port Profile). */
         val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+
+        /** La mayoría de las impresoras de red escuchan "raw" en el puerto 9100. */
+        const val DEFAULT_WIFI_PORT = 9100
+
+        private const val WIFI_CONNECT_TIMEOUT_MS = 5000
     }
 }
