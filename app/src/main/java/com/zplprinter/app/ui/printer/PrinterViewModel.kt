@@ -8,8 +8,10 @@ import com.zplprinter.app.bluetooth.BluetoothPrinterManager
 import com.zplprinter.app.data.db.AppDatabase
 import com.zplprinter.app.data.model.Label
 import com.zplprinter.app.data.model.LabelElement
+import com.zplprinter.app.data.model.PrintRecord
 import com.zplprinter.app.data.model.PrinterProfile
 import com.zplprinter.app.data.prefs.AppPreferences
+import com.zplprinter.app.data.repository.PrintRecordRepository
 import com.zplprinter.app.data.repository.PrinterRepository
 import com.zplprinter.app.zpl.MediaType
 import com.zplprinter.app.zpl.PrintSettings
@@ -50,6 +52,7 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
 
     private val bluetoothManager = BluetoothPrinterManager(application)
     private val printerRepository = PrinterRepository(AppDatabase.getInstance(application).printerDao())
+    private val printRecordRepository = PrintRecordRepository(AppDatabase.getInstance(application).printRecordDao())
     private val appPreferences = AppPreferences(application)
 
     private val _uiState = MutableStateFlow(
@@ -67,6 +70,14 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
     /** Impresoras a las que el usuario se conectó alguna vez, para elegir entre varias (no solo "la última usada"). */
     val savedProfiles: StateFlow<List<PrinterProfile>> = printerRepository.observeProfiles()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Cada intento de impresión (exitoso o no), más reciente primero. */
+    val printHistory: StateFlow<List<PrintRecord>> = printRecordRepository.observeRecords()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun clearPrintHistory() {
+        viewModelScope.launch { printRecordRepository.clear() }
+    }
 
     init {
         viewModelScope.launch {
@@ -262,6 +273,12 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
                     errorMessage = result.exceptionOrNull()?.message
                 )
             }
+            printRecordRepository.record(
+                "Muestra de prueba",
+                _uiState.value.rememberedPrinterName,
+                result.isSuccess,
+                result.exceptionOrNull()?.message,
+            )
         }
     }
 
@@ -280,39 +297,38 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
                     errorMessage = result.exceptionOrNull()?.message
                 )
             }
+            printRecordRepository.record(
+                "Etiqueta de prueba",
+                _uiState.value.rememberedPrinterName,
+                result.isSuccess,
+                result.exceptionOrNull()?.message,
+            )
         }
     }
 
     /**
-     * Imprime ZPL recibido desde otra app (menú "Compartir"). Reconecta a la
-     * última impresora recordada si es necesario; no requiere que el usuario
-     * haya abierto antes la pantalla de configuración en esta sesión.
+     * Imprime ZPL recibido desde otra app (menú "Compartir"), desde el diseñador o desde la
+     * importación de PDF. Reconecta a la última impresora recordada si es necesario; no
+     * requiere que el usuario haya abierto antes la pantalla de configuración en esta sesión.
+     * Cada intento (exitoso o no) queda en el historial de impresión.
      */
-    fun printSharedZpl(zpl: String) {
+    fun printSharedZpl(zpl: String, description: String = "Etiqueta compartida") {
         viewModelScope.launch {
             _uiState.update { it.copy(isPrinting = true, lastPrintOk = null, errorMessage = null) }
 
             if (_uiState.value.connectionState != ConnectionState.CONNECTED) {
                 val lastUsed = printerRepository.getLastUsed()
                 if (lastUsed == null) {
-                    _uiState.update {
-                        it.copy(
-                            isPrinting = false,
-                            lastPrintOk = false,
-                            errorMessage = "No hay ninguna impresora recordada. Abre la app, conecta tu Xprinter una vez y vuelve a intentarlo."
-                        )
-                    }
+                    val message = "No hay ninguna impresora recordada. Abre la app, conecta tu Xprinter una vez y vuelve a intentarlo."
+                    _uiState.update { it.copy(isPrinting = false, lastPrintOk = false, errorMessage = message) }
+                    printRecordRepository.record(description, null, false, message)
                     return@launch
                 }
                 val device = bluetoothManager.deviceForAddress(lastUsed.macAddress)
                 if (device == null) {
-                    _uiState.update {
-                        it.copy(
-                            isPrinting = false,
-                            lastPrintOk = false,
-                            errorMessage = "No se encontró la impresora '${lastUsed.name}'. Verifica que esté emparejada y encendida."
-                        )
-                    }
+                    val message = "No se encontró la impresora '${lastUsed.name}'. Verifica que esté emparejada y encendida."
+                    _uiState.update { it.copy(isPrinting = false, lastPrintOk = false, errorMessage = message) }
+                    printRecordRepository.record(description, lastUsed.name, false, message)
                     return@launch
                 }
                 _uiState.update {
@@ -320,20 +336,22 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
                 }
                 val connectResult = bluetoothManager.connect(device)
                 if (connectResult.isFailure) {
+                    val message = connectResult.exceptionOrNull()?.message ?: "No se pudo conectar a '${lastUsed.name}'"
                     _uiState.update {
                         it.copy(
                             isPrinting = false,
                             connectionState = ConnectionState.ERROR,
                             lastPrintOk = false,
-                            errorMessage = connectResult.exceptionOrNull()?.message
-                                ?: "No se pudo conectar a '${lastUsed.name}'"
+                            errorMessage = message,
                         )
                     }
+                    printRecordRepository.record(description, lastUsed.name, false, message)
                     return@launch
                 }
                 _uiState.update { it.copy(connectionState = ConnectionState.CONNECTED) }
             }
 
+            val printerName = _uiState.value.rememberedPrinterName
             val result = bluetoothManager.sendZpl(zpl)
             _uiState.update {
                 it.copy(
@@ -342,6 +360,7 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
                     errorMessage = result.exceptionOrNull()?.message
                 )
             }
+            printRecordRepository.record(description, printerName, result.isSuccess, result.exceptionOrNull()?.message)
         }
     }
 

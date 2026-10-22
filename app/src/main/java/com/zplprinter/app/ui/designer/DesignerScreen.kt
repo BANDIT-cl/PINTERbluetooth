@@ -119,7 +119,7 @@ fun DesignerScreen(
     darkness: Int,
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
-    onPrint: (String) -> Unit,
+    onPrint: (zpl: String, description: String) -> Unit,
     viewModel: DesignerViewModel = viewModel(),
 ) {
     LaunchedEffect(Unit) {
@@ -164,7 +164,7 @@ fun DesignerScreen(
 
     fun printNow() {
         val settings = PrintSettings(copies = copies, printSpeed = printSpeed, darkness = darkness, mediaType = mediaType)
-        onPrint(ZplGenerator.generate(label, settings))
+        onPrint(ZplGenerator.generate(label, settings), label.name.ifBlank { "Etiqueta" })
     }
 
     Scaffold(

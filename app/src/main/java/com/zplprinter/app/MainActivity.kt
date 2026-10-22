@@ -30,6 +30,7 @@ import com.zplprinter.app.ui.labels.SavedLabelsScreen
 import com.zplprinter.app.ui.pdfimport.PdfImportScreen
 import com.zplprinter.app.ui.printer.ConnectionState
 import com.zplprinter.app.ui.printer.MaintenanceScreen
+import com.zplprinter.app.ui.printer.PrintHistoryScreen
 import com.zplprinter.app.ui.printer.PrinterConnectionScreen
 import com.zplprinter.app.ui.printer.PrinterViewModel
 import com.zplprinter.app.ui.printer.PrintSettingsScreen
@@ -75,7 +76,7 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(incoming) {
                 incoming?.let { (zpl, _) ->
                     navController.navigate("printer")
-                    printerViewModel.printSharedZpl(zpl)
+                    printerViewModel.printSharedZpl(zpl, description = "Compartido desde otra app")
                     incomingZplState.value = null
                 }
             }
@@ -89,6 +90,7 @@ class MainActivity : ComponentActivity() {
             ZplTheme {
                 Surface {
                     val printerUiState by printerViewModel.uiState.collectAsState()
+                    val printHistory by printerViewModel.printHistory.collectAsState()
 
                     NavHost(navController = navController, startDestination = "home") {
                         composable("home") {
@@ -101,6 +103,14 @@ class MainActivity : ComponentActivity() {
                                 onOpenMaintenance = { navController.navigate("maintenance") },
                                 onOpenPdfImport = { navController.navigate("pdf_import") },
                                 onOpenSavedLabels = { navController.navigate("saved_labels") },
+                                onOpenPrintHistory = { navController.navigate("print_history") },
+                            )
+                        }
+                        composable("print_history") {
+                            PrintHistoryScreen(
+                                records = printHistory,
+                                onBack = { navController.popBackStack() },
+                                onClear = printerViewModel::clearPrintHistory,
                             )
                         }
                         composable("saved_labels") {
@@ -122,7 +132,7 @@ class MainActivity : ComponentActivity() {
                                 lastPrintOk = printerUiState.lastPrintOk,
                                 printerErrorMessage = printerUiState.errorMessage,
                                 onBack = { navController.popBackStack() },
-                                onPrint = { zpl -> printerViewModel.printSharedZpl(zpl) },
+                                onPrint = { zpl -> printerViewModel.printSharedZpl(zpl, description = "Etiqueta PDF") },
                             )
                         }
                         composable("printer") {
@@ -178,7 +188,7 @@ class MainActivity : ComponentActivity() {
                                 darkness = printerUiState.darkness,
                                 onBack = { navController.popBackStack() },
                                 onOpenSettings = { navController.navigate("print_settings") },
-                                onPrint = { zpl -> printerViewModel.printSharedZpl(zpl) },
+                                onPrint = { zpl, description -> printerViewModel.printSharedZpl(zpl, description) },
                             )
                         }
                     }

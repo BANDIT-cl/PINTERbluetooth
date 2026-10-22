@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -35,6 +36,7 @@ fun HomeScreen(
     onOpenMaintenance: () -> Unit,
     onOpenPdfImport: () -> Unit,
     onOpenSavedLabels: () -> Unit,
+    onOpenPrintHistory: () -> Unit,
 ) {
     Scaffold(
         topBar = { ZplTopAppBar(title = "Impresora de etiquetas ZPL") }
@@ -73,6 +75,12 @@ fun HomeScreen(
                 subtitle = "PDF de MercadoLibre u otro, redimensionado a tu papel",
                 icon = Icons.Filled.PictureAsPdf,
                 onClick = onOpenPdfImport,
+            )
+            NavRow(
+                title = "Historial de impresión",
+                subtitle = "Qué se imprimió, cuándo y si falló",
+                icon = Icons.Filled.History,
+                onClick = onOpenPrintHistory,
             )
             NavRow(
                 title = "Ajustes de impresión",
