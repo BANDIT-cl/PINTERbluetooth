@@ -508,8 +508,13 @@ private fun LabelCanvas(
 
 /** Tamaño visual aproximado (mm) de un elemento, usado para dibujar su caja y ubicar el handle de resize. */
 private fun elementSizeMm(element: LabelElement): Pair<Float, Float> = when (element) {
-    is LabelElement.TextElement ->
-        (element.fontWidthMm * element.text.length.coerceAtLeast(1) * 0.6f) to element.fontHeightMm
+    is LabelElement.TextElement -> {
+        // El contador y la fecha no imprimen element.text (ese campo puede estar vacío, como en
+        // una Fecha recién agregada): el tamaño del cuadro tiene que salir del texto que se ve
+        // de verdad (resolvedText), o un texto largo queda recortado dentro de un cuadro minúsculo.
+        val visibleLength = element.resolvedText(0).length.coerceAtLeast(1)
+        (element.fontWidthMm * visibleLength * 0.6f) to element.fontHeightMm
+    }
     is LabelElement.BarcodeElement ->
         (element.data.length.coerceAtLeast(4) * element.moduleWidthDots) to element.heightMm
     is LabelElement.QrElement ->
@@ -574,7 +579,10 @@ private fun ElementView(
                 )
             }
             is LabelElement.ShapeElement -> {
-                Box(modifier = Modifier.fillMaxSize().background(Color.Black))
+                // ^GB/BOX dibujan solo el borde (grosor = thicknessMm), no un relleno; si acá se
+                // pintara un bloque sólido no se parecería a lo que realmente sale impreso.
+                val borderDp = with(density) { (element.thicknessMm * scalePxPerMm).toDp() }.coerceAtLeast(1.dp)
+                Box(modifier = Modifier.fillMaxSize().border(borderDp, Color.Black))
             }
             is LabelElement.ImageElement -> {
                 val imageBitmap = remember(element.id, element.sourcePackedMonoBase64) {
@@ -672,6 +680,21 @@ private fun ContentTab(element: LabelElement, viewModel: DesignerViewModel) {
                 label = { Text("Ancho (mm)") },
                 modifier = Modifier.fillMaxWidth(),
             )
+            // "Línea" siempre tiene alto 0 (no se expone); "Forma" sí lo necesita, si no queda
+            // pegada para siempre al alto con el que se creó (20mm), sin forma de cambiarlo.
+            if (element.heightMm > 0f) {
+                Spacer(Modifier.height(8.dp))
+                var heightText by rememberSaveable(element.id) { mutableStateOf(element.heightMm.toInt().toString()) }
+                OutlinedTextField(
+                    value = heightText,
+                    onValueChange = { text ->
+                        heightText = text.filter(Char::isDigit)
+                        heightText.toFloatOrNull()?.let { viewModel.updateShapeHeight(element.id, it) }
+                    },
+                    label = { Text("Alto (mm)") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
         is LabelElement.ImageElement -> Text(
             "Arrastra la esquina para cambiar el tamaño, o \"Rotar\" en la pestaña Alinear.",

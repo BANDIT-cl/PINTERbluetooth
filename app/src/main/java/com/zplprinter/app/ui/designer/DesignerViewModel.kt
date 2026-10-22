@@ -249,10 +249,20 @@ class DesignerViewModel(application: Application) : AndroidViewModel(application
             is LabelElement.QrElement -> element.copy(
                 magnification = (element.magnification + (dWidthMm + dHeightMm) / 8f).coerceIn(1f, 10f),
             )
-            is LabelElement.ShapeElement -> element.copy(
-                widthMm = (element.widthMm + dWidthMm).coerceAtLeast(5f),
-                thicknessMm = (element.thicknessMm + dHeightMm / 10f).coerceIn(0.2f, 5f),
-            )
+            is LabelElement.ShapeElement -> if (element.heightMm > 0f) {
+                // "Forma" (rectángulo con alto real): arrastrar cambia ancho y alto, como cualquier
+                // otro elemento. El grosor del borde se ajusta aparte, en la pestaña Estilo.
+                element.copy(
+                    widthMm = (element.widthMm + dWidthMm).coerceAtLeast(5f),
+                    heightMm = (element.heightMm + dHeightMm).coerceAtLeast(5f),
+                )
+            } else {
+                // "Línea" (alto siempre 0): arrastrar cambia el largo y el grosor del trazo.
+                element.copy(
+                    widthMm = (element.widthMm + dWidthMm).coerceAtLeast(5f),
+                    thicknessMm = (element.thicknessMm + dHeightMm / 10f).coerceIn(0.2f, 5f),
+                )
+            }
             is LabelElement.ImageElement -> element.copy(
                 widthMm = (element.widthMm + dWidthMm).coerceAtLeast(5f),
                 heightMm = (element.heightMm + dHeightMm).coerceAtLeast(5f),
@@ -331,6 +341,13 @@ class DesignerViewModel(application: Application) : AndroidViewModel(application
     fun updateLineWidth(id: String, newWidthMm: Float) {
         updateElement(id) { element ->
             (element as? LabelElement.ShapeElement)?.copy(widthMm = newWidthMm.coerceAtLeast(1f)) ?: element
+        }
+    }
+
+    /** Alto de una "Forma" (rectángulo); no aplica a "Línea", que siempre vale 0. */
+    fun updateShapeHeight(id: String, newHeightMm: Float) {
+        updateElement(id) { element ->
+            (element as? LabelElement.ShapeElement)?.copy(heightMm = newHeightMm.coerceAtLeast(1f)) ?: element
         }
     }
 
