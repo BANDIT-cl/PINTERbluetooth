@@ -52,6 +52,10 @@ fun DoodleDialog(onConfirm: (android.graphics.Bitmap) -> Unit, onCancel: () -> U
     val density = LocalDensity.current
     val strokeWidthPx = with(density) { STROKE_WIDTH_DP.dp.toPx() }
 
+    // Cada trazo tiene que ser una SnapshotStateList (no un MutableList comun): si no, agregar
+    // puntos mientras se arrastra el dedo muta la lista por fuera del sistema de snapshots de
+    // Compose y la fase de dibujo nunca se entera, asi que el trazo no sigue al dedo en vivo y
+    // solo "salta" cuando otra cosa fuerza un redibujo (p. ej. soltar el dedo).
     val strokes = remember { mutableStateListOf<MutableList<Offset>>() }
     var canvasSizePx by remember { mutableStateOf(IntSize.Zero) }
 
@@ -72,7 +76,7 @@ fun DoodleDialog(onConfirm: (android.graphics.Bitmap) -> Unit, onCancel: () -> U
                             .onSizeChanged { canvasSizePx = it }
                             .pointerInput(Unit) {
                                 detectDragGestures(
-                                    onDragStart = { offset -> strokes.add(mutableListOf(offset)) },
+                                    onDragStart = { offset -> strokes.add(mutableStateListOf(offset)) },
                                 ) { change, _ ->
                                     change.consume()
                                     strokes.lastOrNull()?.add(change.position)
