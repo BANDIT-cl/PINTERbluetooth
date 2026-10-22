@@ -8,6 +8,7 @@ import android.graphics.Matrix
 import android.graphics.Rect
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
+import com.zplprinter.app.image.MonoBitmap
 import com.zplprinter.app.zpl.ZplConstants
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -38,9 +39,6 @@ object PdfLabelConverter {
     /** Luminancia (0-255) bajo la cual un píxel cuenta como "tinta" al buscar el recorte. */
     private const val CONTENT_THRESHOLD = 250
 
-    /** Luminancia (0-255) bajo la cual un píxel se imprime como negro en la etiqueta final. */
-    private const val PRINT_THRESHOLD = 180
-
     fun convert(
         context: Context,
         uri: Uri,
@@ -65,7 +63,7 @@ object PdfLabelConverter {
                         val fitted = fitOnWhiteCanvas(cropped, targetWidthDots, targetHeightDots)
                         if (fitted !== cropped) cropped.recycle()
 
-                        PdfLabelImage(targetWidthDots, targetHeightDots, packMonochrome(fitted), fitted)
+                        PdfLabelImage(targetWidthDots, targetHeightDots, MonoBitmap.pack(fitted), fitted)
                     }
                 }
             }
@@ -138,28 +136,6 @@ object PdfLabelConverter {
         )
         if (scaled !== source) scaled.recycle()
         return canvasBitmap
-    }
-
-    /** Empaqueta 1 bit/píxel (negro=1), MSB primero, cada fila alineada a byte: el formato que espera ^GFA. */
-    private fun packMonochrome(bitmap: Bitmap): ByteArray {
-        val width = bitmap.width
-        val height = bitmap.height
-        val bytesPerRow = (width + 7) / 8
-        val out = ByteArray(bytesPerRow * height)
-        val pixels = IntArray(width * height)
-        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
-
-        for (y in 0 until height) {
-            val rowBase = y * width
-            val outRowBase = y * bytesPerRow
-            for (x in 0 until width) {
-                if (luminance(pixels[rowBase + x]) < PRINT_THRESHOLD) {
-                    val byteIndex = outRowBase + (x shr 3)
-                    out[byteIndex] = (out[byteIndex].toInt() or (0x80 shr (x and 7))).toByte()
-                }
-            }
-        }
-        return out
     }
 
     private fun luminance(pixel: Int): Int {

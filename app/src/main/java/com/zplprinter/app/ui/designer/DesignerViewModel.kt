@@ -1,6 +1,7 @@
 package com.zplprinter.app.ui.designer
 
 import android.app.Application
+import android.graphics.Bitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.zplprinter.app.data.db.AppDatabase
@@ -9,6 +10,7 @@ import com.zplprinter.app.data.model.Label
 import com.zplprinter.app.data.model.LabelElement
 import com.zplprinter.app.data.model.TextDataType
 import com.zplprinter.app.data.repository.LabelRepository
+import com.zplprinter.app.image.MonoBitmap
 import com.zplprinter.app.zpl.ZplConstants
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,6 +21,7 @@ import java.util.UUID
 
 private const val MAX_HISTORY = 50
 private const val SCALE_STEP_MM = 2f
+private const val MAX_INITIAL_IMAGE_MM = 40f
 
 /** Estado del lienzo del diseñador, con historial de deshacer/rehacer y guardado en Room. */
 class DesignerViewModel(application: Application) : AndroidViewModel(application) {
@@ -102,6 +105,30 @@ class DesignerViewModel(application: Application) : AndroidViewModel(application
         addElement(LabelElement.ShapeElement(id = newId(), xMm = 5f, yMm = 5f, widthMm = 20f, heightMm = 20f))
     }
 
+    /**
+     * Inserta una foto importada/recortada o un dibujo libre ("Graffiti") ya convertidos a
+     * [bitmap] monocromo. Si es más grande que [MAX_INITIAL_IMAGE_MM] de lado, entra reducida
+     * (conservando proporción) para no tapar toda la etiqueta; el usuario la agranda arrastrando
+     * la esquina, igual que cualquier otro elemento.
+     */
+    fun addImage(bitmap: Bitmap, dpi: Int) {
+        val widthMm = bitmap.width * 25.4f / dpi
+        val heightMm = bitmap.height * 25.4f / dpi
+        val scale = (MAX_INITIAL_IMAGE_MM / maxOf(widthMm, heightMm)).coerceAtMost(1f)
+        addElement(
+            LabelElement.ImageElement(
+                id = newId(),
+                xMm = 5f,
+                yMm = 5f,
+                widthMm = widthMm * scale,
+                heightMm = heightMm * scale,
+                sourceWidthDots = bitmap.width,
+                sourceHeightDots = bitmap.height,
+                sourcePackedMonoBase64 = MonoBitmap.toBase64(MonoBitmap.pack(bitmap)),
+            )
+        )
+    }
+
     /** Herramienta "Fecha": texto que siempre resuelve a la fecha de hoy al imprimir. */
     fun addDate() {
         addElement(
@@ -131,6 +158,7 @@ class DesignerViewModel(application: Application) : AndroidViewModel(application
             is LabelElement.BarcodeElement -> original.copy(id = copyId)
             is LabelElement.QrElement -> original.copy(id = copyId)
             is LabelElement.ShapeElement -> original.copy(id = copyId)
+            is LabelElement.ImageElement -> original.copy(id = copyId)
         }.withPosition(original.xMm + 5f, original.yMm + 5f)
         _label.update { it.copy(elements = it.elements + duplicate, updatedAt = System.currentTimeMillis()) }
         _selectedElementId.value = duplicate.id
@@ -205,6 +233,10 @@ class DesignerViewModel(application: Application) : AndroidViewModel(application
             is LabelElement.ShapeElement -> element.copy(
                 widthMm = (element.widthMm + dWidthMm).coerceAtLeast(5f),
                 thicknessMm = (element.thicknessMm + dHeightMm / 10f).coerceIn(0.2f, 5f),
+            )
+            is LabelElement.ImageElement -> element.copy(
+                widthMm = (element.widthMm + dWidthMm).coerceAtLeast(5f),
+                heightMm = (element.heightMm + dHeightMm).coerceAtLeast(5f),
             )
         }
     }

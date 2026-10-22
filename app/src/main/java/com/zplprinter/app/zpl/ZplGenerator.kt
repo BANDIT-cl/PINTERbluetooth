@@ -1,9 +1,12 @@
 package com.zplprinter.app.zpl
 
+import android.graphics.Bitmap
+import android.graphics.Matrix
 import com.zplprinter.app.data.model.BarcodeSymbology
 import com.zplprinter.app.data.model.Label
 import com.zplprinter.app.data.model.LabelElement
 import com.zplprinter.app.data.model.TextDataType
+import com.zplprinter.app.image.MonoBitmap
 import kotlin.math.roundToInt
 
 /**
@@ -79,6 +82,7 @@ object ZplGenerator {
         is LabelElement.BarcodeElement -> renderBarcode(element, dpi)
         is LabelElement.QrElement -> renderQr(element, dpi)
         is LabelElement.ShapeElement -> renderShape(element, dpi)
+        is LabelElement.ImageElement -> renderImage(element, dpi)
     }
 
     private fun renderText(e: LabelElement.TextElement, dpi: Int, copyIndex: Int): String {
@@ -113,6 +117,37 @@ object ZplGenerator {
         val orientation = orientationChar(e.rotationDeg)
         val magnification = e.magnification.roundToInt().coerceIn(1, 10)
         return "^FO$x,$y^BQ$orientation,2,$magnification^FDQA,${escape(e.data)}^FS"
+    }
+
+    /**
+     * ZPL no admite escalar un ^GFA al imprimir (a diferencia de texto/barras, que escalan por
+     * parámetro), así que acá se reescala el bitmap fuente en memoria según el tamaño actual del
+     * elemento en mm, y se re-rota (solo pasos de 90°, como el resto de los elementos) antes de
+     * volver a empaquetarlo.
+     */
+    private fun renderImage(e: LabelElement.ImageElement, dpi: Int): String {
+        val x = ZplConstants.mmToDots(e.xMm, dpi)
+        val y = ZplConstants.mmToDots(e.yMm, dpi)
+        val targetWidthDots = ZplConstants.mmToDots(e.widthMm, dpi).coerceAtLeast(1)
+        val targetHeightDots = ZplConstants.mmToDots(e.heightMm, dpi).coerceAtLeast(1)
+
+        val source = MonoBitmap.unpack(MonoBitmap.fromBase64(e.sourcePackedMonoBase64), e.sourceWidthDots, e.sourceHeightDots)
+        val scaled = if (targetWidthDots == source.width && targetHeightDots == source.height) {
+            source
+        } else {
+            Bitmap.createScaledBitmap(source, targetWidthDots, targetHeightDots, true)
+        }
+        val rotated = if (e.rotationDeg % 360f == 0f) scaled else rotateBitmap(scaled, e.rotationDeg)
+
+        val packed = MonoBitmap.pack(rotated)
+        val bytesPerRow = (rotated.width + 7) / 8
+        val totalBytes = bytesPerRow * rotated.height
+        return "^FO$x,$y^GFA,$totalBytes,$totalBytes,$bytesPerRow,${packed.toZplHex()}^FS"
+    }
+
+    private fun rotateBitmap(bitmap: Bitmap, degrees: Float): Bitmap {
+        val matrix = Matrix().apply { postRotate(degrees) }
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     }
 
     private fun renderShape(e: LabelElement.ShapeElement, dpi: Int): String {

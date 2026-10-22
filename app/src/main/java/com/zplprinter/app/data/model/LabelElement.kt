@@ -104,6 +104,33 @@ sealed class LabelElement {
         override fun withLocked(locked: Boolean) = copy(locked = locked)
     }
 
+    /**
+     * Una imagen monocroma insertada en la etiqueta: foto importada y recortada, o dibujo
+     * libre ("Graffiti"). Se imprime como ^GFA; ZPL no admite escalar un gráfico al imprimir,
+     * así que [ZplGenerator][com.zplprinter.app.zpl.ZplGenerator] reescala el bitmap fuente
+     * ([sourcePackedMonoBase64]) cada vez según [widthMm]/[heightMm], que es lo que el usuario
+     * cambia al arrastrar la esquina de redimensionar.
+     */
+    @Serializable
+    @SerialName("image")
+    data class ImageElement(
+        override val id: String,
+        override val xMm: Float,
+        override val yMm: Float,
+        override val rotationDeg: Float = 0f,
+        override val locked: Boolean = false,
+        val widthMm: Float,
+        val heightMm: Float,
+        val sourceWidthDots: Int,
+        val sourceHeightDots: Int,
+        /** Bitmap original sin escalar: 1 bit/píxel (negro=1), MSB primero, fila alineada a byte, en Base64. */
+        val sourcePackedMonoBase64: String,
+    ) : LabelElement() {
+        override fun withPosition(newXMm: Float, newYMm: Float) = copy(xMm = newXMm, yMm = newYMm)
+        override fun withRotation(newRotationDeg: Float) = copy(rotationDeg = newRotationDeg)
+        override fun withLocked(locked: Boolean) = copy(locked = locked)
+    }
+
     @Serializable
     @SerialName("shape")
     data class ShapeElement(

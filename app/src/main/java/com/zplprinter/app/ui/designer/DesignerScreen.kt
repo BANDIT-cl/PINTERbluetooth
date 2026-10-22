@@ -1,5 +1,9 @@
 package com.zplprinter.app.ui.designer
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -80,8 +84,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -89,6 +95,7 @@ import com.zplprinter.app.data.model.BarcodeSymbology
 import com.zplprinter.app.data.model.Label
 import com.zplprinter.app.data.model.LabelElement
 import com.zplprinter.app.data.model.TextDataType
+import com.zplprinter.app.image.MonoBitmap
 import com.zplprinter.app.ui.components.ZplTopAppBar
 import com.zplprinter.app.zpl.MediaType
 import com.zplprinter.app.zpl.PrintSettings
@@ -126,6 +133,12 @@ fun DesignerScreen(
     val lastSaveOk by viewModel.lastSaveOk.collectAsState()
     var copies by rememberSaveable { mutableStateOf(1) }
     var showRenameDialog by rememberSaveable { mutableStateOf(false) }
+    var pendingPhotoUri by remember { mutableStateOf<Uri?>(null) }
+    var showDoodleDialog by rememberSaveable { mutableStateOf(false) }
+
+    val pickPhotoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        pendingPhotoUri = uri
+    }
 
     fun printNow() {
         val settings = PrintSettings(copies = copies, printSpeed = printSpeed, darkness = darkness, mediaType = mediaType)
@@ -195,6 +208,8 @@ fun DesignerScreen(
                 onAddLine = viewModel::addLine,
                 onAddShape = viewModel::addShape,
                 onAddDate = viewModel::addDate,
+                onAddImage = { pickPhotoLauncher.launch("image/*") },
+                onAddDoodle = { showDoodleDialog = true },
             )
 
             CopiesRow(copies = copies, onCopiesChange = { copies = it.coerceIn(1, 99) })
@@ -240,6 +255,27 @@ fun DesignerScreen(
                 showRenameDialog = false
             },
             onDismiss = { showRenameDialog = false },
+        )
+    }
+
+    pendingPhotoUri?.let { uri ->
+        PhotoCropDialog(
+            uri = uri,
+            onConfirm = { bitmap ->
+                viewModel.addImage(bitmap, label.dpi)
+                pendingPhotoUri = null
+            },
+            onCancel = { pendingPhotoUri = null },
+        )
+    }
+
+    if (showDoodleDialog) {
+        DoodleDialog(
+            onConfirm = { bitmap ->
+                viewModel.addImage(bitmap, label.dpi)
+                showDoodleDialog = false
+            },
+            onCancel = { showDoodleDialog = false },
         )
     }
 }
@@ -329,8 +365,8 @@ private fun EditActionButton(icon: ImageVector, label: String, enabled: Boolean,
 
 /**
  * Grilla de 10 herramientas de inserción (2 filas x 5), al estilo de com.print.label.
- * Las 4 que requieren cámara o un pipeline de bitmap que todavía no existe (Material,
- * Imagen, Graffiti, Escaneo) se muestran atenuadas y no hacen nada al tocarlas.
+ * "Material" (biblioteca de íconos/clipart) y "Escaneo" (leer código con la cámara) todavía
+ * no están implementadas y se muestran atenuadas.
  */
 @Composable
 private fun InsertionGrid(
@@ -340,6 +376,8 @@ private fun InsertionGrid(
     onAddLine: () -> Unit,
     onAddShape: () -> Unit,
     onAddDate: () -> Unit,
+    onAddImage: () -> Unit,
+    onAddDoodle: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -352,8 +390,8 @@ private fun InsertionGrid(
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             InsertionTool(Icons.Filled.CalendarToday, "Fecha", enabled = true, onClick = onAddDate)
             InsertionTool(Icons.Filled.Collections, "Material", enabled = false, onClick = {})
-            InsertionTool(Icons.Filled.Image, "Imagen", enabled = false, onClick = {})
-            InsertionTool(Icons.Filled.Brush, "Graffiti", enabled = false, onClick = {})
+            InsertionTool(Icons.Filled.Image, "Imagen", enabled = true, onClick = onAddImage)
+            InsertionTool(Icons.Filled.Brush, "Graffiti", enabled = true, onClick = onAddDoodle)
             InsertionTool(Icons.Filled.CameraAlt, "Escaneo", enabled = false, onClick = {})
         }
     }
@@ -445,6 +483,7 @@ private fun elementSizeMm(element: LabelElement): Pair<Float, Float> = when (ele
         (element.magnification * 5f) to (element.magnification * 5f)
     is LabelElement.ShapeElement ->
         element.widthMm to element.heightMm.coerceAtLeast(element.thicknessMm).coerceAtLeast(1f)
+    is LabelElement.ImageElement -> element.widthMm to element.heightMm
 }
 
 @Composable
@@ -503,6 +542,21 @@ private fun ElementView(
             }
             is LabelElement.ShapeElement -> {
                 Box(modifier = Modifier.fillMaxSize().background(Color.Black))
+            }
+            is LabelElement.ImageElement -> {
+                val imageBitmap = remember(element.id, element.sourcePackedMonoBase64) {
+                    MonoBitmap.unpack(
+                        MonoBitmap.fromBase64(element.sourcePackedMonoBase64),
+                        element.sourceWidthDots,
+                        element.sourceHeightDots,
+                    ).asImageBitmap()
+                }
+                Image(
+                    bitmap = imageBitmap,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.FillBounds,
+                )
             }
         }
 
@@ -586,6 +640,11 @@ private fun ContentTab(element: LabelElement, viewModel: DesignerViewModel) {
                 modifier = Modifier.fillMaxWidth(),
             )
         }
+        is LabelElement.ImageElement -> Text(
+            "Arrastra la esquina para cambiar el tamaño, o \"Rotar\" en la pestaña Alinear.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -727,6 +786,11 @@ private fun StyleTab(element: LabelElement, viewModel: DesignerViewModel) {
                 valueRange = 0.2f..5f,
             )
         }
+        is LabelElement.ImageElement -> Text(
+            "${element.widthMm.toInt()} x ${element.heightMm.toInt()} mm",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
