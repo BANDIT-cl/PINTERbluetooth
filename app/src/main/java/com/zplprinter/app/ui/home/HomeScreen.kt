@@ -41,7 +41,7 @@ fun HomeScreen(
     onOpenQuickPrint: () -> Unit,
 ) {
     Scaffold(
-        topBar = { ZplTopAppBar(title = "Impresora de etiquetas ZPL") }
+        topBar = { ZplTopAppBar(title = "Etiquetas Pro") }
     ) { padding ->
         Column(
             modifier = Modifier
