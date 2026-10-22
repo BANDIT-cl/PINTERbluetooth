@@ -24,6 +24,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.zplprinter.app.ui.batchimport.BatchImportScreen
 import com.zplprinter.app.ui.designer.DesignerScreen
 import com.zplprinter.app.ui.home.HomeScreen
 import com.zplprinter.app.ui.labels.SavedLabelsScreen
@@ -48,6 +49,9 @@ class MainActivity : ComponentActivity() {
     /** PDF (p. ej. etiqueta de MercadoLibre) recibido por Intent.ACTION_SEND, pendiente de abrir en PdfImportScreen. */
     private val incomingPdfState = mutableStateOf<Pair<Uri, Long>?>(null)
 
+    /** Varios archivos recibidos a la vez por Intent.ACTION_SEND_MULTIPLE, pendientes de revisar en BatchImportScreen. */
+    private val incomingBatchState = mutableStateOf<Pair<List<Uri>, Long>?>(null)
+
     private val requiredBluetoothPermissions: Array<String>
         get() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN)
@@ -71,6 +75,7 @@ class MainActivity : ComponentActivity() {
             val printerViewModel: PrinterViewModel = viewModel()
             val incoming by incomingZplState
             val incomingPdf by incomingPdfState
+            val incomingBatch by incomingBatchState
 
             val navController = rememberNavController()
 
@@ -85,6 +90,12 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(incomingPdf) {
                 incomingPdf?.let {
                     navController.navigate("pdf_import")
+                }
+            }
+
+            LaunchedEffect(incomingBatch) {
+                incomingBatch?.let {
+                    navController.navigate("batch_import")
                 }
             }
 
@@ -150,6 +161,19 @@ class MainActivity : ComponentActivity() {
                                 printerErrorMessage = printerUiState.errorMessage,
                                 onBack = { navController.popBackStack() },
                                 onPrint = { command -> printerViewModel.printGeneratedCommand(command, description = "Etiqueta PDF") },
+                            )
+                        }
+                        composable("batch_import") {
+                            BatchImportScreen(
+                                initialUris = incomingBatch?.first.orEmpty(),
+                                onInitialUrisConsumed = { incomingBatchState.value = null },
+                                widthMm = printerUiState.widthMm,
+                                heightMm = printerUiState.heightMm,
+                                dpi = printerUiState.dpi,
+                                printSettings = printerViewModel.currentPrintSettings(),
+                                printerLanguage = printerUiState.printerLanguage,
+                                onBack = { navController.popBackStack() },
+                                onPrintBatch = { items, onItemResult -> printerViewModel.printBatch(items, onItemResult) },
                             )
                         }
                         composable("printer") {
@@ -223,7 +247,7 @@ class MainActivity : ComponentActivity() {
         handleIncomingIntent(intent)
     }
 
-    /** Extrae el ZPL (o PDF) de un Intent.ACTION_SEND/ACTION_VIEW y lo encola para imprimir o importar. */
+    /** Extrae el ZPL (o PDF) de un Intent.ACTION_SEND/ACTION_SEND_MULTIPLE/ACTION_VIEW y lo encola para imprimir o importar. */
     private fun handleIncomingIntent(intent: Intent?) {
         if (intent == null) return
 
@@ -232,6 +256,16 @@ class MainActivity : ComponentActivity() {
         if (intent.action == Intent.ACTION_VIEW && intent.type == "application/pdf") {
             intent.data?.let { uri ->
                 incomingPdfState.value = uri to System.nanoTime()
+            }
+            return
+        }
+
+        // Seleccionar varios archivos a la vez en el gestor de archivos y compartirlos dispara
+        // ACTION_SEND_MULTIPLE (EXTRA_STREAM como ArrayList<Uri>), no ACTION_SEND.
+        if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
+            val uris = IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+            if (!uris.isNullOrEmpty()) {
+                incomingBatchState.value = uris.toList() to System.nanoTime()
             }
             return
         }

@@ -30,6 +30,13 @@ import kotlinx.coroutines.launch
 
 enum class ConnectionState { DISCONNECTED, CONNECTING, CONNECTED, ERROR }
 
+/** Un item ya preparado (ZPL crudo, o un comando ya generado en el lenguaje configurado) listo para [PrinterViewModel.printBatch]. */
+sealed class BatchPrintItem {
+    abstract val description: String
+    data class RawZpl(val zpl: String, override val description: String) : BatchPrintItem()
+    data class GeneratedCommand(val command: String, override val description: String) : BatchPrintItem()
+}
+
 data class PrinterUiState(
     val bondedDevices: List<BluetoothDevice> = emptyList(),
     val discoveredDevices: List<BluetoothDevice> = emptyList(),
@@ -430,27 +437,7 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
      * Cada intento (exitoso o no) queda en el historial de impresión.
      */
     fun printSharedZpl(zpl: String, description: String = "Etiqueta compartida") {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isPrinting = true, lastPrintOk = null, errorMessage = null) }
-
-            val connectError = ensureConnectedToLastUsed(description)
-            if (connectError != null) {
-                _uiState.update { it.copy(isPrinting = false, lastPrintOk = false, errorMessage = connectError) }
-                printRecordRepository.record(description, null, false, connectError)
-                return@launch
-            }
-
-            val printerName = _uiState.value.rememberedPrinterName
-            val result = bluetoothManager.sendZpl(zpl)
-            _uiState.update {
-                it.copy(
-                    isPrinting = false,
-                    lastPrintOk = result.isSuccess,
-                    errorMessage = result.exceptionOrNull()?.message
-                )
-            }
-            printRecordRepository.record(description, printerName, result.isSuccess, result.exceptionOrNull()?.message)
-        }
+        viewModelScope.launch { doPrintZpl(zpl, description) }
     }
 
     /**
@@ -461,30 +448,75 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
      * con qué método enviarlo. Reconecta a la última impresora recordada igual que [printSharedZpl].
      */
     fun printGeneratedCommand(command: String, description: String) {
+        viewModelScope.launch { doPrintGenerated(command, description) }
+    }
+
+    /**
+     * Imprime varios items en secuencia -espera a que cada uno termine antes de pasar al
+     * siguiente, porque [bluetoothManager] solo mantiene una conexión activa a la vez-, p. ej. al
+     * compartir varios PDF/ZPL juntos desde el selector de archivos del sistema. [onItemResult] se
+     * llama después de cada item con su índice en [items] y si se imprimió bien, para que la UI
+     * muestre el progreso en vivo.
+     */
+    fun printBatch(items: List<BatchPrintItem>, onItemResult: (index: Int, ok: Boolean) -> Unit) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isPrinting = true, lastPrintOk = null, errorMessage = null) }
-
-            val connectError = ensureConnectedToLastUsed(description)
-            if (connectError != null) {
-                _uiState.update { it.copy(isPrinting = false, lastPrintOk = false, errorMessage = connectError) }
-                printRecordRepository.record(description, null, false, connectError)
-                return@launch
+            items.forEachIndexed { index, item ->
+                val ok = when (item) {
+                    is BatchPrintItem.RawZpl -> doPrintZpl(item.zpl, item.description)
+                    is BatchPrintItem.GeneratedCommand -> doPrintGenerated(item.command, item.description)
+                }
+                onItemResult(index, ok)
             }
-
-            val printerName = _uiState.value.rememberedPrinterName
-            val result = when (_uiState.value.printerLanguage) {
-                PrinterLanguage.ZPL -> bluetoothManager.sendZpl(command)
-                PrinterLanguage.TSPL -> bluetoothManager.sendTspl(command)
-            }
-            _uiState.update {
-                it.copy(
-                    isPrinting = false,
-                    lastPrintOk = result.isSuccess,
-                    errorMessage = result.exceptionOrNull()?.message
-                )
-            }
-            printRecordRepository.record(description, printerName, result.isSuccess, result.exceptionOrNull()?.message)
         }
+    }
+
+    private suspend fun doPrintZpl(zpl: String, description: String): Boolean {
+        _uiState.update { it.copy(isPrinting = true, lastPrintOk = null, errorMessage = null) }
+
+        val connectError = ensureConnectedToLastUsed(description)
+        if (connectError != null) {
+            _uiState.update { it.copy(isPrinting = false, lastPrintOk = false, errorMessage = connectError) }
+            printRecordRepository.record(description, null, false, connectError)
+            return false
+        }
+
+        val printerName = _uiState.value.rememberedPrinterName
+        val result = bluetoothManager.sendZpl(zpl)
+        _uiState.update {
+            it.copy(
+                isPrinting = false,
+                lastPrintOk = result.isSuccess,
+                errorMessage = result.exceptionOrNull()?.message
+            )
+        }
+        printRecordRepository.record(description, printerName, result.isSuccess, result.exceptionOrNull()?.message)
+        return result.isSuccess
+    }
+
+    private suspend fun doPrintGenerated(command: String, description: String): Boolean {
+        _uiState.update { it.copy(isPrinting = true, lastPrintOk = null, errorMessage = null) }
+
+        val connectError = ensureConnectedToLastUsed(description)
+        if (connectError != null) {
+            _uiState.update { it.copy(isPrinting = false, lastPrintOk = false, errorMessage = connectError) }
+            printRecordRepository.record(description, null, false, connectError)
+            return false
+        }
+
+        val printerName = _uiState.value.rememberedPrinterName
+        val result = when (_uiState.value.printerLanguage) {
+            PrinterLanguage.ZPL -> bluetoothManager.sendZpl(command)
+            PrinterLanguage.TSPL -> bluetoothManager.sendTspl(command)
+        }
+        _uiState.update {
+            it.copy(
+                isPrinting = false,
+                lastPrintOk = result.isSuccess,
+                errorMessage = result.exceptionOrNull()?.message
+            )
+        }
+        printRecordRepository.record(description, printerName, result.isSuccess, result.exceptionOrNull()?.message)
+        return result.isSuccess
     }
 
     override fun onCleared() {
