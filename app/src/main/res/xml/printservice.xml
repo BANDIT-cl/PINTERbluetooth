@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Declara el servicio ante Ajustes > Conexión > Impresión. settingsActivity es lo que
+     abre el sistema cuando el usuario toca "Ajustes" en los detalles del servicio. -->
+<print-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:vendor="Impresora de etiquetas ZPL"
+    android:settingsActivity="com.zplprinter.app.MainActivity" />

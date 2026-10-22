@@ -7,6 +7,7 @@ import android.graphics.Matrix
 import android.graphics.Rect
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
+import android.os.ParcelFileDescriptor
 import com.zplprinter.app.image.MonoBitmap
 import com.zplprinter.app.zpl.ZplConstants
 import kotlin.math.roundToInt
@@ -46,23 +47,36 @@ object PdfLabelConverter {
     ): List<PdfLabelImage> {
         val descriptor = context.contentResolver.openFileDescriptor(uri, "r")
             ?: error("No se pudo abrir el archivo PDF")
-        descriptor.use { pfd ->
-            PdfRenderer(pfd).use { renderer ->
-                check(renderer.pageCount > 0) { "El PDF no tiene páginas" }
-                val targetWidthDots = ZplConstants.mmToDots(targetWidthMm, dpi)
-                val targetHeightDots = ZplConstants.mmToDots(targetHeightMm, dpi)
+        descriptor.use { pfd -> return convert(pfd, targetWidthMm, targetHeightMm, dpi) }
+    }
 
-                return (0 until renderer.pageCount).map { index ->
-                    renderer.openPage(index).use { page ->
-                        val full = renderPageToBitmap(page)
-                        val cropped = autocrop(full)
-                        if (cropped !== full) full.recycle()
+    /**
+     * Igual que [convert], pero a partir de un [ParcelFileDescriptor] ya abierto -p. ej. el
+     * documento que entrega un [android.printservice.PrintJob] al imprimir desde el diálogo
+     * "Imprimir" del sistema, que no tiene una [Uri] de content provider propia-. [PdfRenderer]
+     * cierra [pfd] internamente al terminar, así que el llamador no debe volver a cerrarlo.
+     */
+    fun convert(
+        pfd: ParcelFileDescriptor,
+        targetWidthMm: Float,
+        targetHeightMm: Float,
+        dpi: Int,
+    ): List<PdfLabelImage> {
+        PdfRenderer(pfd).use { renderer ->
+            check(renderer.pageCount > 0) { "El PDF no tiene páginas" }
+            val targetWidthDots = ZplConstants.mmToDots(targetWidthMm, dpi)
+            val targetHeightDots = ZplConstants.mmToDots(targetHeightMm, dpi)
 
-                        val fitted = MonoBitmap.fitOnWhiteCanvas(cropped, targetWidthDots, targetHeightDots)
-                        if (fitted !== cropped) cropped.recycle()
+            return (0 until renderer.pageCount).map { index ->
+                renderer.openPage(index).use { page ->
+                    val full = renderPageToBitmap(page)
+                    val cropped = autocrop(full)
+                    if (cropped !== full) full.recycle()
 
-                        PdfLabelImage(targetWidthDots, targetHeightDots, MonoBitmap.pack(fitted), fitted)
-                    }
+                    val fitted = MonoBitmap.fitOnWhiteCanvas(cropped, targetWidthDots, targetHeightDots)
+                    if (fitted !== cropped) cropped.recycle()
+
+                    PdfLabelImage(targetWidthDots, targetHeightDots, MonoBitmap.pack(fitted), fitted)
                 }
             }
         }

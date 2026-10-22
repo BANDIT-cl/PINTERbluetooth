@@ -68,5 +68,19 @@
                 <data android:mimeType="application/pdf" />
             </intent-filter>
         </activity>
+
+        <!-- Hace que la app aparezca como impresora en el diálogo "Imprimir" de cualquier app del
+             sistema. El usuario debe habilitarlo una vez en Ajustes > Conexión > Impresión. -->
+        <service
+            android:name=".printservice.ZplPrintService"
+            android:exported="true"
+            android:permission="android.permission.BIND_PRINT_SERVICE">
+            <intent-filter>
+                <action android:name="android.printservice.PrintService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.printservice"
+                android:resource="@xml/printservice" />
+        </service>
     </application>
 </manifest>
