@@ -46,12 +46,13 @@ import androidx.compose.ui.unit.dp
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import com.journeyapps.barcodescanner.BarcodeEncoder
+import com.zplprinter.app.data.model.PrinterLanguage
 import com.zplprinter.app.image.MonoBitmap
 import com.zplprinter.app.ui.components.ZplTopAppBar
 import com.zplprinter.app.ui.designer.PhotoCropDialog
+import com.zplprinter.app.zpl.LabelCommandGenerator
 import com.zplprinter.app.zpl.PrintSettings
 import com.zplprinter.app.zpl.ZplConstants
-import com.zplprinter.app.zpl.ZplGenerator
 
 private enum class QuickPrintTab(val label: String, val icon: ImageVector) {
     TEXT("Texto", Icons.Filled.TextFields),
@@ -70,11 +71,12 @@ fun QuickPrintScreen(
     heightMm: Float,
     dpi: Int,
     printSettings: PrintSettings,
+    printerLanguage: PrinterLanguage,
     isPrinting: Boolean,
     lastPrintOk: Boolean?,
     printerErrorMessage: String?,
     onBack: () -> Unit,
-    onPrint: (zpl: String, description: String) -> Unit,
+    onPrint: (command: String, description: String) -> Unit,
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(QuickPrintTab.TEXT) }
 
@@ -94,9 +96,9 @@ fun QuickPrintScreen(
             }
 
             when (selectedTab) {
-                QuickPrintTab.TEXT -> TextQuickPrintTab(widthMm, heightMm, dpi, printSettings, isPrinting, lastPrintOk, printerErrorMessage, onPrint)
-                QuickPrintTab.IMAGE -> ImageQuickPrintTab(widthMm, heightMm, dpi, printSettings, isPrinting, lastPrintOk, printerErrorMessage, onPrint)
-                QuickPrintTab.QR -> QrQuickPrintTab(widthMm, heightMm, dpi, printSettings, isPrinting, lastPrintOk, printerErrorMessage, onPrint)
+                QuickPrintTab.TEXT -> TextQuickPrintTab(widthMm, heightMm, dpi, printSettings, printerLanguage, isPrinting, lastPrintOk, printerErrorMessage, onPrint)
+                QuickPrintTab.IMAGE -> ImageQuickPrintTab(widthMm, heightMm, dpi, printSettings, printerLanguage, isPrinting, lastPrintOk, printerErrorMessage, onPrint)
+                QuickPrintTab.QR -> QrQuickPrintTab(widthMm, heightMm, dpi, printSettings, printerLanguage, isPrinting, lastPrintOk, printerErrorMessage, onPrint)
             }
         }
     }
@@ -108,6 +110,7 @@ private fun TextQuickPrintTab(
     heightMm: Float,
     dpi: Int,
     printSettings: PrintSettings,
+    printerLanguage: PrinterLanguage,
     isPrinting: Boolean,
     lastPrintOk: Boolean?,
     printerErrorMessage: String?,
@@ -137,8 +140,8 @@ private fun TextQuickPrintTab(
 
         Button(
             onClick = {
-                val zpl = ZplGenerator.buildTextLabel(text, widthMm, heightMm, dpi, fontHeightMm, printSettings)
-                onPrint(zpl, text.take(40).ifBlank { "Texto" })
+                val command = LabelCommandGenerator.buildTextLabel(text, widthMm, heightMm, dpi, fontHeightMm, printSettings, printerLanguage)
+                onPrint(command, text.take(40).ifBlank { "Texto" })
             },
             enabled = !isPrinting && text.isNotBlank(),
             modifier = Modifier.fillMaxWidth(),
@@ -154,6 +157,7 @@ private fun ImageQuickPrintTab(
     heightMm: Float,
     dpi: Int,
     printSettings: PrintSettings,
+    printerLanguage: PrinterLanguage,
     isPrinting: Boolean,
     lastPrintOk: Boolean?,
     printerErrorMessage: String?,
@@ -208,7 +212,7 @@ private fun ImageQuickPrintTab(
                 val targetHeightDots = ZplConstants.mmToDots(heightMm, dpi)
                 val fitted = MonoBitmap.fitOnWhiteCanvas(cropped, targetWidthDots, targetHeightDots)
                 preview = fitted
-                pendingZpl = ZplGenerator.buildImageLabel(targetWidthDots, targetHeightDots, MonoBitmap.pack(fitted), printSettings)
+                pendingZpl = LabelCommandGenerator.buildImageLabel(targetWidthDots, targetHeightDots, MonoBitmap.pack(fitted), printSettings, printerLanguage)
                 pendingUri = null
             },
             onCancel = { pendingUri = null },
@@ -222,6 +226,7 @@ private fun QrQuickPrintTab(
     heightMm: Float,
     dpi: Int,
     printSettings: PrintSettings,
+    printerLanguage: PrinterLanguage,
     isPrinting: Boolean,
     lastPrintOk: Boolean?,
     printerErrorMessage: String?,
@@ -258,8 +263,8 @@ private fun QrQuickPrintTab(
 
         Button(
             onClick = {
-                val zpl = ZplGenerator.buildQrLabel(data, widthMm, heightMm, dpi, printSettings)
-                onPrint(zpl, data.take(40).ifBlank { "QR" })
+                val command = LabelCommandGenerator.buildQrLabel(data, widthMm, heightMm, dpi, printSettings, printerLanguage)
+                onPrint(command, data.take(40).ifBlank { "QR" })
             },
             enabled = !isPrinting && data.isNotBlank(),
             modifier = Modifier.fillMaxWidth(),

@@ -12,6 +12,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -26,6 +27,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.zplprinter.app.data.model.PrinterLanguage
 import com.zplprinter.app.ui.components.ValueRow
 import com.zplprinter.app.ui.components.ZplTopAppBar
 import com.zplprinter.app.zpl.MediaType
@@ -41,9 +43,11 @@ fun PrintSettingsScreen(
     mediaType: MediaType,
     printSpeed: Int,
     darkness: Int,
+    printerLanguage: PrinterLanguage,
     onBack: () -> Unit,
     onSizeSelected: (Float, Float) -> Unit,
     onPrintSettingsChange: (MediaType, Int, Int) -> Unit,
+    onPrinterLanguageSelected: (PrinterLanguage) -> Unit,
 ) {
     var expandedRow by rememberSaveable { mutableStateOf<String?>(null) }
     fun toggle(key: String) {
@@ -78,6 +82,15 @@ fun PrintSettingsScreen(
                     selected = mediaType,
                     onSelected = { onPrintSettingsChange(it, printSpeed, darkness) },
                 )
+            }
+
+            ValueRow(
+                title = "Lenguaje de impresora",
+                value = printerLanguage.displayName,
+                expanded = expandedRow == "language",
+                onClick = { toggle("language") },
+            ) {
+                PrinterLanguageContent(selected = printerLanguage, onSelected = onPrinterLanguageSelected)
             }
 
             ValueRow(
@@ -190,6 +203,40 @@ private fun PaperSizeContent(
                 Text("Aplicar tamaño")
             }
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PrinterLanguageContent(selected: PrinterLanguage, onSelected: (PrinterLanguage) -> Unit) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+        OutlinedTextField(
+            value = selected.displayName,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Lenguaje de impresora") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            PrinterLanguage.entries.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option.displayName) },
+                    onClick = {
+                        onSelected(option)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+    if (selected == PrinterLanguage.TSPL) {
+        Text(
+            "TSPL es experimental: no se probó todavía contra una impresora TSC real.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
     }
 }
 

@@ -121,11 +121,12 @@ class MainActivity : ComponentActivity() {
                                 heightMm = printerUiState.heightMm,
                                 dpi = printerUiState.dpi,
                                 printSettings = printerViewModel.currentPrintSettings(),
+                                printerLanguage = printerUiState.printerLanguage,
                                 isPrinting = printerUiState.isPrinting,
                                 lastPrintOk = printerUiState.lastPrintOk,
                                 printerErrorMessage = printerUiState.errorMessage,
                                 onBack = { navController.popBackStack() },
-                                onPrint = { zpl, description -> printerViewModel.printSharedZpl(zpl, description) },
+                                onPrint = { command, description -> printerViewModel.printGeneratedCommand(command, description) },
                             )
                         }
                         composable("saved_labels") {
@@ -143,11 +144,12 @@ class MainActivity : ComponentActivity() {
                                 heightMm = printerUiState.heightMm,
                                 dpi = printerUiState.dpi,
                                 printSettings = printerViewModel.currentPrintSettings(),
+                                printerLanguage = printerUiState.printerLanguage,
                                 isPrinting = printerUiState.isPrinting,
                                 lastPrintOk = printerUiState.lastPrintOk,
                                 printerErrorMessage = printerUiState.errorMessage,
                                 onBack = { navController.popBackStack() },
-                                onPrint = { zpl -> printerViewModel.printSharedZpl(zpl, description = "Etiqueta PDF") },
+                                onPrint = { command -> printerViewModel.printGeneratedCommand(command, description = "Etiqueta PDF") },
                             )
                         }
                         composable("printer") {
@@ -166,9 +168,11 @@ class MainActivity : ComponentActivity() {
                                 mediaType = printerUiState.mediaType,
                                 printSpeed = printerUiState.printSpeed,
                                 darkness = printerUiState.darkness,
+                                printerLanguage = printerUiState.printerLanguage,
                                 onBack = { navController.popBackStack() },
                                 onSizeSelected = printerViewModel::selectPaperSize,
                                 onPrintSettingsChange = printerViewModel::updatePrintSettings,
+                                onPrinterLanguageSelected = printerViewModel::updatePrinterLanguage,
                             )
                         }
                         composable("maintenance") {
@@ -201,9 +205,10 @@ class MainActivity : ComponentActivity() {
                                 mediaType = printerUiState.mediaType,
                                 printSpeed = printerUiState.printSpeed,
                                 darkness = printerUiState.darkness,
+                                printerLanguage = printerUiState.printerLanguage,
                                 onBack = { navController.popBackStack() },
                                 onOpenSettings = { navController.navigate("print_settings") },
-                                onPrint = { zpl, description -> printerViewModel.printSharedZpl(zpl, description) },
+                                onPrint = { command, description -> printerViewModel.printGeneratedCommand(command, description) },
                             )
                         }
                     }

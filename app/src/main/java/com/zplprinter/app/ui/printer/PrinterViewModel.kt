@@ -9,10 +9,12 @@ import com.zplprinter.app.data.db.AppDatabase
 import com.zplprinter.app.data.model.Label
 import com.zplprinter.app.data.model.LabelElement
 import com.zplprinter.app.data.model.PrintRecord
+import com.zplprinter.app.data.model.PrinterLanguage
 import com.zplprinter.app.data.model.PrinterProfile
 import com.zplprinter.app.data.prefs.AppPreferences
 import com.zplprinter.app.data.repository.PrintRecordRepository
 import com.zplprinter.app.data.repository.PrinterRepository
+import com.zplprinter.app.tspl.TsplGenerator
 import com.zplprinter.app.zpl.MediaType
 import com.zplprinter.app.zpl.PrintSettings
 import com.zplprinter.app.zpl.ZplConstants
@@ -46,6 +48,7 @@ data class PrinterUiState(
     val isCalibrating: Boolean = false,
     val isQueryingStatus: Boolean = false,
     val printerStatus: String? = null,
+    val printerLanguage: PrinterLanguage = PrinterLanguage.ZPL,
 )
 
 class PrinterViewModel(application: Application) : AndroidViewModel(application) {
@@ -63,6 +66,7 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
             mediaType = appPreferences.getMediaType(),
             printSpeed = appPreferences.getPrintSpeed(),
             darkness = appPreferences.getDarkness(),
+            printerLanguage = appPreferences.getPrinterLanguage(),
         )
     )
     val uiState: StateFlow<PrinterUiState> = _uiState.asStateFlow()
@@ -110,12 +114,22 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { it.copy(isScanning = false) }
     }
 
-    /** Autocalibración del sensor de papel (~JC): corrige el desalineado típico tras cambiar el rollo. */
+    /**
+     * Autocalibración del sensor de papel: ~JC en ZPL, o GAPDETECT/BLINEDETECT en TSPL
+     * según el tipo de papel configurado (TSPL distingue el sensor a calibrar).
+     */
     fun calibrateSensor() {
-        if (_uiState.value.connectionState != ConnectionState.CONNECTED) return
+        val state = _uiState.value
+        if (state.connectionState != ConnectionState.CONNECTED) return
         _uiState.update { it.copy(isCalibrating = true, lastPrintOk = null) }
         viewModelScope.launch {
-            val result = bluetoothManager.sendZpl(ZplGenerator.CALIBRATE_SENSOR_CMD)
+            val result = when (state.printerLanguage) {
+                PrinterLanguage.ZPL -> bluetoothManager.sendZpl(ZplGenerator.CALIBRATE_SENSOR_CMD)
+                PrinterLanguage.TSPL -> {
+                    val cmd = if (state.mediaType == MediaType.BLACK_MARK) TsplGenerator.CALIBRATE_BLINE_CMD else TsplGenerator.CALIBRATE_GAP_CMD
+                    bluetoothManager.sendTspl(cmd)
+                }
+            }
             _uiState.update {
                 it.copy(
                     isCalibrating = false,
@@ -129,10 +143,16 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
     /**
      * Consulta el estado de la impresora (~HS) y muestra la respuesta cruda. Algunas impresoras
      * ZPL "compatibles" (no Zebra originales, como muchas Xprinter) no implementan esta consulta
-     * y simplemente no responden; eso se reporta como error, no como estado vacío.
+     * y simplemente no responden; eso se reporta como error, no como estado vacío. No disponible
+     * para TSPL: no hay un comando de consulta de estado confirmado en el manual de TSC.
      */
     fun queryPrinterStatus() {
-        if (_uiState.value.connectionState != ConnectionState.CONNECTED) return
+        val state = _uiState.value
+        if (state.connectionState != ConnectionState.CONNECTED) return
+        if (state.printerLanguage == PrinterLanguage.TSPL) {
+            _uiState.update { it.copy(errorMessage = "Consultar estado no está disponible para impresoras TSPL") }
+            return
+        }
         _uiState.update { it.copy(isQueryingStatus = true, printerStatus = null, errorMessage = null) }
         viewModelScope.launch {
             val result = bluetoothManager.queryStatus(ZplGenerator.QUERY_STATUS_CMD)
@@ -144,6 +164,11 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
                 )
             }
         }
+    }
+
+    fun updatePrinterLanguage(language: PrinterLanguage) {
+        appPreferences.savePrinterLanguage(language)
+        _uiState.update { it.copy(printerLanguage = language) }
     }
 
     fun selectPaperSize(widthMm: Float, heightMm: Float) {
@@ -353,6 +378,68 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
 
             val printerName = _uiState.value.rememberedPrinterName
             val result = bluetoothManager.sendZpl(zpl)
+            _uiState.update {
+                it.copy(
+                    isPrinting = false,
+                    lastPrintOk = result.isSuccess,
+                    errorMessage = result.exceptionOrNull()?.message
+                )
+            }
+            printRecordRepository.record(description, printerName, result.isSuccess, result.exceptionOrNull()?.message)
+        }
+    }
+
+    /**
+     * Imprime un comando generado por la propia app (diseñador, importación de PDF, impresión
+     * rápida) en el protocolo que corresponda según [PrinterUiState.printerLanguage]. A diferencia
+     * de [printSharedZpl] (que siempre es ZPL, porque el protocolo lo decide la app externa que
+     * comparte el archivo), aquí el comando ya viene en el lenguaje correcto: solo falta elegir
+     * con qué método enviarlo. Reconecta a la última impresora recordada igual que [printSharedZpl].
+     */
+    fun printGeneratedCommand(command: String, description: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isPrinting = true, lastPrintOk = null, errorMessage = null) }
+
+            if (_uiState.value.connectionState != ConnectionState.CONNECTED) {
+                val lastUsed = printerRepository.getLastUsed()
+                if (lastUsed == null) {
+                    val message = "No hay ninguna impresora recordada. Abre la app, conecta tu impresora una vez y vuelve a intentarlo."
+                    _uiState.update { it.copy(isPrinting = false, lastPrintOk = false, errorMessage = message) }
+                    printRecordRepository.record(description, null, false, message)
+                    return@launch
+                }
+                val device = bluetoothManager.deviceForAddress(lastUsed.macAddress)
+                if (device == null) {
+                    val message = "No se encontró la impresora '${lastUsed.name}'. Verifica que esté emparejada y encendida."
+                    _uiState.update { it.copy(isPrinting = false, lastPrintOk = false, errorMessage = message) }
+                    printRecordRepository.record(description, lastUsed.name, false, message)
+                    return@launch
+                }
+                _uiState.update {
+                    it.copy(selectedDevice = device, connectionState = ConnectionState.CONNECTING)
+                }
+                val connectResult = bluetoothManager.connect(device)
+                if (connectResult.isFailure) {
+                    val message = connectResult.exceptionOrNull()?.message ?: "No se pudo conectar a '${lastUsed.name}'"
+                    _uiState.update {
+                        it.copy(
+                            isPrinting = false,
+                            connectionState = ConnectionState.ERROR,
+                            lastPrintOk = false,
+                            errorMessage = message,
+                        )
+                    }
+                    printRecordRepository.record(description, lastUsed.name, false, message)
+                    return@launch
+                }
+                _uiState.update { it.copy(connectionState = ConnectionState.CONNECTED) }
+            }
+
+            val printerName = _uiState.value.rememberedPrinterName
+            val result = when (_uiState.value.printerLanguage) {
+                PrinterLanguage.ZPL -> bluetoothManager.sendZpl(command)
+                PrinterLanguage.TSPL -> bluetoothManager.sendTspl(command)
+            }
             _uiState.update {
                 it.copy(
                     isPrinting = false,

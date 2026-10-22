@@ -31,9 +31,10 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.zplprinter.app.data.model.PrinterLanguage
 import com.zplprinter.app.ui.components.ZplTopAppBar
+import com.zplprinter.app.zpl.LabelCommandGenerator
 import com.zplprinter.app.zpl.PrintSettings
-import com.zplprinter.app.zpl.ZplGenerator
 
 /**
  * Importa un PDF (p. ej. una etiqueta de envío de MercadoLibre, normalmente 100x150mm) y lo
@@ -48,6 +49,7 @@ fun PdfImportScreen(
     heightMm: Float,
     dpi: Int,
     printSettings: PrintSettings,
+    printerLanguage: PrinterLanguage,
     isPrinting: Boolean,
     lastPrintOk: Boolean?,
     printerErrorMessage: String?,
@@ -130,15 +132,16 @@ fun PdfImportScreen(
 
                     Button(
                         onClick = {
-                            val zpl = images.joinToString(separator = "") { image ->
-                                ZplGenerator.buildImageLabel(
+                            val command = images.joinToString(separator = "") { image ->
+                                LabelCommandGenerator.buildImageLabel(
                                     image.widthDots,
                                     image.heightDots,
                                     image.packedMono,
                                     printSettings,
+                                    printerLanguage,
                                 )
                             }
-                            onPrint(zpl)
+                            onPrint(command)
                         },
                         enabled = !isPrinting,
                         modifier = Modifier.fillMaxWidth(),

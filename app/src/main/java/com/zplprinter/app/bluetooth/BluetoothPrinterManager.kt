@@ -146,6 +146,28 @@ class BluetoothPrinterManager(private val context: Context) {
     }
 
     /**
+     * Envía un comando TSPL (impresoras TSC). A diferencia de ZPL, TSPL no tiene un
+     * ^CI28 que active UTF-8: la página de códigos se fija con CODEPAGE 1252 (que
+     * [com.zplprinter.app.tspl.TsplGenerator] ya antepone), así que el texto debe viajar
+     * en ISO-8859-1 (compatible en el rango de acentos/ñ del español). Además, BITMAP
+     * embebe bytes crudos de imagen dentro del mismo String vía un round-trip Latin-1:
+     * codificar con cualquier otro charset (p. ej. UTF-8) corrompería esos bytes.
+     */
+    suspend fun sendTspl(command: String): Result<Unit> = withContext(Dispatchers.IO) {
+        val activeSocket = socket
+        if (activeSocket == null || !activeSocket.isConnected) {
+            return@withContext Result.failure(IllegalStateException("No hay conexión con la impresora"))
+        }
+        try {
+            activeSocket.outputStream.write(command.toByteArray(Charsets.ISO_8859_1))
+            activeSocket.outputStream.flush()
+            Result.success(Unit)
+        } catch (e: IOException) {
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Envía un comando ZPL de consulta (p. ej. ~HS) y devuelve la respuesta cruda de la
      * impresora como texto. Espera hasta [timeoutMs] a que lleguen datos; algunas impresoras
      * ZPL "compatibles" (no Zebra originales) no implementan estas consultas y no responden nada.

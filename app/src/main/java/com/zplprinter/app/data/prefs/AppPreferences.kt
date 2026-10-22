@@ -1,6 +1,7 @@
 package com.zplprinter.app.data.prefs
 
 import android.content.Context
+import com.zplprinter.app.data.model.PrinterLanguage
 import com.zplprinter.app.zpl.MediaType
 import com.zplprinter.app.zpl.ZplConstants
 
@@ -41,6 +42,14 @@ class AppPreferences(context: Context) {
             .apply()
     }
 
+    fun getPrinterLanguage(): PrinterLanguage =
+        runCatching { PrinterLanguage.valueOf(prefs.getString(KEY_PRINTER_LANGUAGE, PrinterLanguage.ZPL.name)!!) }
+            .getOrDefault(PrinterLanguage.ZPL)
+
+    fun savePrinterLanguage(language: PrinterLanguage) {
+        prefs.edit().putString(KEY_PRINTER_LANGUAGE, language.name).apply()
+    }
+
     private companion object {
         const val KEY_WIDTH_MM = "paper_width_mm"
         const val KEY_HEIGHT_MM = "paper_height_mm"
@@ -48,6 +57,7 @@ class AppPreferences(context: Context) {
         const val KEY_MEDIA_TYPE = "media_type"
         const val KEY_PRINT_SPEED = "print_speed"
         const val KEY_DARKNESS = "darkness"
+        const val KEY_PRINTER_LANGUAGE = "printer_language"
         const val DEFAULT_SIZE_MM = 100f
         const val DEFAULT_PRINT_SPEED = 4
         const val DEFAULT_DARKNESS = 15

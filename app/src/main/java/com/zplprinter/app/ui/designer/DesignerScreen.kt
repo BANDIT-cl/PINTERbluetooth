@@ -100,12 +100,13 @@ import com.journeyapps.barcodescanner.ScanOptions
 import com.zplprinter.app.data.model.BarcodeSymbology
 import com.zplprinter.app.data.model.Label
 import com.zplprinter.app.data.model.LabelElement
+import com.zplprinter.app.data.model.PrinterLanguage
 import com.zplprinter.app.data.model.TextDataType
 import com.zplprinter.app.image.MonoBitmap
 import com.zplprinter.app.ui.components.ZplTopAppBar
+import com.zplprinter.app.zpl.LabelCommandGenerator
 import com.zplprinter.app.zpl.MediaType
 import com.zplprinter.app.zpl.PrintSettings
-import com.zplprinter.app.zpl.ZplGenerator
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -117,9 +118,10 @@ fun DesignerScreen(
     mediaType: MediaType,
     printSpeed: Int,
     darkness: Int,
+    printerLanguage: PrinterLanguage,
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
-    onPrint: (zpl: String, description: String) -> Unit,
+    onPrint: (command: String, description: String) -> Unit,
     viewModel: DesignerViewModel = viewModel(),
 ) {
     LaunchedEffect(Unit) {
@@ -164,7 +166,7 @@ fun DesignerScreen(
 
     fun printNow() {
         val settings = PrintSettings(copies = copies, printSpeed = printSpeed, darkness = darkness, mediaType = mediaType)
-        onPrint(ZplGenerator.generate(label, settings), label.name.ifBlank { "Etiqueta" })
+        onPrint(LabelCommandGenerator.generate(label, settings, printerLanguage), label.name.ifBlank { "Etiqueta" })
     }
 
     Scaffold(
