@@ -34,6 +34,7 @@ import com.zplprinter.app.ui.printer.PrintHistoryScreen
 import com.zplprinter.app.ui.printer.PrinterConnectionScreen
 import com.zplprinter.app.ui.printer.PrinterViewModel
 import com.zplprinter.app.ui.printer.PrintSettingsScreen
+import com.zplprinter.app.ui.quickprint.QuickPrintScreen
 import com.zplprinter.app.ui.theme.ZplTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -104,6 +105,7 @@ class MainActivity : ComponentActivity() {
                                 onOpenPdfImport = { navController.navigate("pdf_import") },
                                 onOpenSavedLabels = { navController.navigate("saved_labels") },
                                 onOpenPrintHistory = { navController.navigate("print_history") },
+                                onOpenQuickPrint = { navController.navigate("quick_print") },
                             )
                         }
                         composable("print_history") {
@@ -111,6 +113,19 @@ class MainActivity : ComponentActivity() {
                                 records = printHistory,
                                 onBack = { navController.popBackStack() },
                                 onClear = printerViewModel::clearPrintHistory,
+                            )
+                        }
+                        composable("quick_print") {
+                            QuickPrintScreen(
+                                widthMm = printerUiState.widthMm,
+                                heightMm = printerUiState.heightMm,
+                                dpi = printerUiState.dpi,
+                                printSettings = printerViewModel.currentPrintSettings(),
+                                isPrinting = printerUiState.isPrinting,
+                                lastPrintOk = printerUiState.lastPrintOk,
+                                printerErrorMessage = printerUiState.errorMessage,
+                                onBack = { navController.popBackStack() },
+                                onPrint = { zpl, description -> printerViewModel.printSharedZpl(zpl, description) },
                             )
                         }
                         composable("saved_labels") {

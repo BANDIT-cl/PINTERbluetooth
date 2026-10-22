@@ -189,6 +189,71 @@ object ZplGenerator {
         }
     }
 
+    /**
+     * Etiqueta de solo texto libre ("Imprimir texto"), sin pasar por el diseñador: el texto se
+     * ajusta solo dentro del ancho del papel con ^FB (salto de línea automático de ZPL).
+     */
+    fun buildTextLabel(
+        text: String,
+        widthMm: Float,
+        heightMm: Float,
+        dpi: Int,
+        fontHeightMm: Float = 8f,
+        printSettings: PrintSettings = PrintSettings(),
+    ): String {
+        val widthDots = ZplConstants.mmToDots(widthMm, dpi)
+        val heightDots = ZplConstants.mmToDots(heightMm, dpi)
+        val marginDots = ZplConstants.mmToDots(4f, dpi)
+        val fontDots = ZplConstants.mmToDots(fontHeightMm, dpi).coerceAtLeast(10)
+        val blockWidthDots = (widthDots - 2 * marginDots).coerceAtLeast(fontDots)
+        val lineHeightDots = (fontDots * 1.2f).roundToInt().coerceAtLeast(1)
+        val maxLines = ((heightDots - 2 * marginDots) / lineHeightDots).coerceAtLeast(1)
+
+        return buildString {
+            append("^XA")
+            append("^CI28")
+            append("^MN${printSettings.mediaType.zplChar}")
+            printSettings.printSpeed?.let { append("^PR$it") }
+            printSettings.darkness?.let { append("^MD$it") }
+            append("^PW$widthDots")
+            append("^LL$heightDots")
+            append("^FO$marginDots,$marginDots")
+            append("^A0N,$fontDots,$fontDots")
+            append("^FB$blockWidthDots,$maxLines,0,L,0")
+            append("^FD${escapeTextBlock(text)}^FS")
+            append("^PQ${printSettings.copies.coerceAtLeast(1)}")
+            append("^XZ")
+        }
+    }
+
+    /** Etiqueta de solo QR ("Imprimir QR"), sin pasar por el diseñador. El tamaño se estima a partir del papel cargado. */
+    fun buildQrLabel(
+        data: String,
+        widthMm: Float,
+        heightMm: Float,
+        dpi: Int,
+        printSettings: PrintSettings = PrintSettings(),
+    ): String {
+        val widthDots = ZplConstants.mmToDots(widthMm, dpi)
+        val heightDots = ZplConstants.mmToDots(heightMm, dpi)
+        val marginDots = ZplConstants.mmToDots(5f, dpi)
+        val magnification = (minOf(widthMm, heightMm) / 25f).roundToInt().coerceIn(1, 10)
+
+        return buildString {
+            append("^XA")
+            append("^CI28")
+            append("^MN${printSettings.mediaType.zplChar}")
+            printSettings.printSpeed?.let { append("^PR$it") }
+            printSettings.darkness?.let { append("^MD$it") }
+            append("^PW$widthDots")
+            append("^LL$heightDots")
+            append("^FO$marginDots,$marginDots^BQN,2,$magnification")
+            append("^FDQA,${escape(data)}^FS")
+            append("^PQ${printSettings.copies.coerceAtLeast(1)}")
+            append("^XZ")
+        }
+    }
+
     private val HEX_CHARS = "0123456789ABCDEF".toCharArray()
 
     /** Conversión a hex ASCII (formato esperado por ^GFA) con tabla precalculada: evitar String.format por byte importa con etiquetas de cientos de KB. */
@@ -204,6 +269,9 @@ object ZplGenerator {
 
     /** ZPL usa ^ y ~ como prefijos de control; se eliminan del contenido del usuario para no romper el stream. */
     private fun escape(text: String): String = text.replace("^", "").replace("~", "")
+
+    /** Dentro de un bloque ^FB, un salto de línea real del usuario tiene que forzarse con \&; un \n suelto no hace nada en ZPL. */
+    private fun escapeTextBlock(text: String): String = escape(text).replace("\n", "\\&")
 
     /** ZPL solo admite rotaciones en pasos de 90°: N=0°, R=90°, I=180°, B=270°. */
     private fun orientationChar(rotationDeg: Float): Char {

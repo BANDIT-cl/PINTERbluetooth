@@ -2,7 +2,6 @@ package com.zplprinter.app.pdf
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Rect
@@ -10,7 +9,6 @@ import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import com.zplprinter.app.image.MonoBitmap
 import com.zplprinter.app.zpl.ZplConstants
-import kotlin.math.min
 import kotlin.math.roundToInt
 
 /** Una página de PDF ya convertida a mapa de bits monocromo del tamaño exacto de etiqueta, lista para ^GFA. */
@@ -60,7 +58,7 @@ object PdfLabelConverter {
                         val cropped = autocrop(full)
                         if (cropped !== full) full.recycle()
 
-                        val fitted = fitOnWhiteCanvas(cropped, targetWidthDots, targetHeightDots)
+                        val fitted = MonoBitmap.fitOnWhiteCanvas(cropped, targetWidthDots, targetHeightDots)
                         if (fitted !== cropped) cropped.recycle()
 
                         PdfLabelImage(targetWidthDots, targetHeightDots, MonoBitmap.pack(fitted), fitted)
@@ -113,29 +111,6 @@ object PdfLabelConverter {
             (maxY + 1 + marginPx).coerceAtMost(height),
         )
         return Bitmap.createBitmap(bitmap, bbox.left, bbox.top, bbox.width(), bbox.height())
-    }
-
-    /** Escala manteniendo proporción para que quepa dentro de [targetWidthDots]x[targetHeightDots], centrado sobre blanco. */
-    private fun fitOnWhiteCanvas(source: Bitmap, targetWidthDots: Int, targetHeightDots: Int): Bitmap {
-        val scale = min(
-            targetWidthDots / source.width.toFloat(),
-            targetHeightDots / source.height.toFloat(),
-        )
-        val scaledWidth = (source.width * scale).roundToInt().coerceAtLeast(1)
-        val scaledHeight = (source.height * scale).roundToInt().coerceAtLeast(1)
-        val scaled = Bitmap.createScaledBitmap(source, scaledWidth, scaledHeight, true)
-
-        val canvasBitmap = Bitmap.createBitmap(targetWidthDots, targetHeightDots, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(canvasBitmap)
-        canvas.drawColor(Color.WHITE)
-        canvas.drawBitmap(
-            scaled,
-            (targetWidthDots - scaledWidth) / 2f,
-            (targetHeightDots - scaledHeight) / 2f,
-            null,
-        )
-        if (scaled !== source) scaled.recycle()
-        return canvasBitmap
     }
 
     private fun luminance(pixel: Int): Int {

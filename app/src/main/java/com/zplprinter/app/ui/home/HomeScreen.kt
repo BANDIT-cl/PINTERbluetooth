@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -37,6 +38,7 @@ fun HomeScreen(
     onOpenPdfImport: () -> Unit,
     onOpenSavedLabels: () -> Unit,
     onOpenPrintHistory: () -> Unit,
+    onOpenQuickPrint: () -> Unit,
 ) {
     Scaffold(
         topBar = { ZplTopAppBar(title = "Impresora de etiquetas ZPL") }
@@ -52,6 +54,12 @@ fun HomeScreen(
                 subtitle = "Crear una etiqueta nueva",
                 icon = Icons.Filled.Edit,
                 onClick = onOpenDesigner,
+            )
+            NavRow(
+                title = "Impresión rápida",
+                subtitle = "Texto, imagen o QR, directo al papel sin abrir el diseñador",
+                icon = Icons.Filled.FlashOn,
+                onClick = onOpenQuickPrint,
             )
             NavRow(
                 title = "Mis etiquetas",

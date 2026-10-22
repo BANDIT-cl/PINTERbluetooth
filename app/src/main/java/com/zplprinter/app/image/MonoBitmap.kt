@@ -1,8 +1,11 @@
 package com.zplprinter.app.image
 
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
 import android.util.Base64
+import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * Empaquetado monocromo (1 bit/píxel, negro=1, MSB primero, fila alineada a byte): el formato
@@ -50,6 +53,29 @@ object MonoBitmap {
         }
         bitmap.setPixels(pixels, 0, widthDots, 0, 0, widthDots, heightDots)
         return bitmap
+    }
+
+    /** Escala manteniendo proporción para que quepa dentro de [targetWidthDots]x[targetHeightDots], centrado sobre blanco. */
+    fun fitOnWhiteCanvas(source: Bitmap, targetWidthDots: Int, targetHeightDots: Int): Bitmap {
+        val scale = min(
+            targetWidthDots / source.width.toFloat(),
+            targetHeightDots / source.height.toFloat(),
+        )
+        val scaledWidth = (source.width * scale).roundToInt().coerceAtLeast(1)
+        val scaledHeight = (source.height * scale).roundToInt().coerceAtLeast(1)
+        val scaled = Bitmap.createScaledBitmap(source, scaledWidth, scaledHeight, true)
+
+        val canvasBitmap = Bitmap.createBitmap(targetWidthDots, targetHeightDots, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(canvasBitmap)
+        canvas.drawColor(Color.WHITE)
+        canvas.drawBitmap(
+            scaled,
+            (targetWidthDots - scaledWidth) / 2f,
+            (targetHeightDots - scaledHeight) / 2f,
+            null,
+        )
+        if (scaled !== source) scaled.recycle()
+        return canvasBitmap
     }
 
     fun toBase64(bytes: ByteArray): String = Base64.encodeToString(bytes, Base64.NO_WRAP)
