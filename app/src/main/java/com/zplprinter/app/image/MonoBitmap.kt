@@ -55,12 +55,16 @@ object MonoBitmap {
         return bitmap
     }
 
-    /** Escala manteniendo proporción para que quepa dentro de [targetWidthDots]x[targetHeightDots], centrado sobre blanco. */
-    fun fitOnWhiteCanvas(source: Bitmap, targetWidthDots: Int, targetHeightDots: Int): Bitmap {
+    /**
+     * Escala manteniendo proporción para que quepa dentro de [targetWidthDots]x[targetHeightDots], centrado sobre blanco.
+     * [contentScale] (0-1] reduce el contenido respecto a ese ajuste máximo, manteniendo el lienzo final al tamaño completo
+     * de la etiqueta: así se puede imprimir la imagen más chica que el papel sin cambiar el tamaño de la etiqueta.
+     */
+    fun fitOnWhiteCanvas(source: Bitmap, targetWidthDots: Int, targetHeightDots: Int, contentScale: Float = 1f): Bitmap {
         val scale = min(
             targetWidthDots / source.width.toFloat(),
             targetHeightDots / source.height.toFloat(),
-        )
+        ) * contentScale.coerceIn(0.05f, 1f)
         val scaledWidth = (source.width * scale).roundToInt().coerceAtLeast(1)
         val scaledHeight = (source.height * scale).roundToInt().coerceAtLeast(1)
         val scaled = Bitmap.createScaledBitmap(source, scaledWidth, scaledHeight, true)

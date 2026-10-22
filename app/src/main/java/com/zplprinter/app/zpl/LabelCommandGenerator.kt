@@ -48,8 +48,9 @@ object LabelCommandGenerator {
         dpi: Int,
         printSettings: PrintSettings,
         language: PrinterLanguage,
+        sizeScale: Float = 1f,
     ): String = when (language) {
-        PrinterLanguage.ZPL -> ZplGenerator.buildQrLabel(data, widthMm, heightMm, dpi, printSettings)
-        PrinterLanguage.TSPL -> TsplGenerator.buildQrLabel(data, widthMm, heightMm, dpi, printSettings)
+        PrinterLanguage.ZPL -> ZplGenerator.buildQrLabel(data, widthMm, heightMm, dpi, printSettings, sizeScale)
+        PrinterLanguage.TSPL -> TsplGenerator.buildQrLabel(data, widthMm, heightMm, dpi, printSettings, sizeScale)
     }
 }

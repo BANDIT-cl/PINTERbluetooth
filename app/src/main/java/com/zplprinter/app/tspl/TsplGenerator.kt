@@ -266,16 +266,20 @@ object TsplGenerator {
         return lines
     }
 
-    /** Etiqueta de solo QR ("Imprimir QR"), sin pasar por el diseñador. El tamaño se estima a partir del papel cargado. */
+    /**
+     * Etiqueta de solo QR ("Imprimir QR"), sin pasar por el diseñador. El tamaño base se estima a partir
+     * del papel cargado; [sizeScale] (0-1] permite achicarlo respecto a ese tamaño base.
+     */
     fun buildQrLabel(
         data: String,
         widthMm: Float,
         heightMm: Float,
         dpi: Int,
         printSettings: PrintSettings = PrintSettings(),
+        sizeScale: Float = 1f,
     ): String {
         val marginDots = ZplConstants.mmToDots(5f, dpi)
-        val cellWidth = (minOf(widthMm, heightMm) / 25f).roundToInt().coerceIn(1, 10)
+        val cellWidth = ((minOf(widthMm, heightMm) / 25f) * sizeScale.coerceIn(0.05f, 1f)).roundToInt().coerceIn(1, 10)
 
         return buildString {
             append(header(widthMm, heightMm, printSettings))
