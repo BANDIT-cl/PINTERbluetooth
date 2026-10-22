@@ -54,6 +54,16 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/pdf" />
             </intent-filter>
+
+            <!-- Algunas apps (p. ej. MercadoLibre, el navegador o el gestor de descargas) no usan
+                 "Compartir" sino "Abrir con" al descargar el PDF, lo cual dispara ACTION_VIEW en
+                 vez de ACTION_SEND -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:mimeType="application/pdf" />
+            </intent-filter>
         </activity>
     </application>
 </manifest>

@@ -218,9 +218,20 @@ class MainActivity : ComponentActivity() {
         handleIncomingIntent(intent)
     }
 
-    /** Extrae el ZPL (o PDF) de un Intent.ACTION_SEND y lo encola para imprimir o importar. */
+    /** Extrae el ZPL (o PDF) de un Intent.ACTION_SEND/ACTION_VIEW y lo encola para imprimir o importar. */
     private fun handleIncomingIntent(intent: Intent?) {
-        if (intent == null || intent.action != Intent.ACTION_SEND) return
+        if (intent == null) return
+
+        // "Abrir con" desde MercadoLibre, el navegador o el gestor de descargas dispara ACTION_VIEW
+        // en vez de ACTION_SEND, y la Uri viaja en intent.data en lugar de EXTRA_STREAM.
+        if (intent.action == Intent.ACTION_VIEW && intent.type == "application/pdf") {
+            intent.data?.let { uri ->
+                incomingPdfState.value = uri to System.nanoTime()
+            }
+            return
+        }
+
+        if (intent.action != Intent.ACTION_SEND) return
 
         if (intent.type == "application/pdf") {
             val uri = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
