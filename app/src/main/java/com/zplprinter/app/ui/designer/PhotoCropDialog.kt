@@ -17,9 +17,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -72,11 +76,21 @@ fun PhotoCropDialog(uri: Uri, onConfirm: (Bitmap) -> Unit, onCancel: () -> Unit)
     Dialog(onDismissRequest = onCancel, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(modifier = Modifier.fillMaxSize()) {
             val bitmap = sourceBitmap
-            Column(modifier = Modifier.fillMaxSize()) {
+            // Un Dialog de Compose abre una ventana Android separada de la de MainActivity, que
+            // no siempre recibe los insets de la barra de navegacion de forma confiable (una
+            // limitacion conocida): navigationBarsPadding() solo no alcanzaba para garantizar que
+            // "Cancelar"/"Listo" quedaran visibles en todas las pantallas (p. ej. con una foto en
+            // vertical, que ya de por si necesita mas alto). verticalScroll() es la garantia real.
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .navigationBarsPadding(),
+            ) {
                 ZplTopAppBar(title = "Recortar imagen", onBack = onCancel)
 
                 if (bitmap == null) {
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Box(modifier = Modifier.fillMaxWidth().height(300.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
                 } else {
@@ -88,8 +102,7 @@ fun PhotoCropDialog(uri: Uri, onConfirm: (Bitmap) -> Unit, onCancel: () -> Unit)
                     var initialized by remember(bitmap) { mutableStateOf(false) }
 
                     Box(
-                        modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp),
-                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
                     ) {
                         Box(
                             modifier = Modifier

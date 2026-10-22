@@ -11,7 +11,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -61,12 +64,21 @@ fun DoodleDialog(onConfirm: (android.graphics.Bitmap) -> Unit, onCancel: () -> U
 
     Dialog(onDismissRequest = onCancel, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(modifier = Modifier.fillMaxSize()) {
-            Column(modifier = Modifier.fillMaxSize()) {
+            // Un Dialog de Compose abre una ventana Android separada de la de MainActivity, que
+            // no siempre recibe los insets de la barra de navegacion de forma confiable (una
+            // limitacion conocida): navigationBarsPadding() solo no alcanzaba para garantizar que
+            // "Cancelar"/"Listo" quedaran visibles en todas las pantallas. verticalScroll() es la
+            // garantia real: sea cual sea el motivo de que el contenido no entre, siempre se puede
+            // bajar para llegar a los botones.
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .navigationBarsPadding(),
+            ) {
                 ZplTopAppBar(title = "Dibujo libre", onBack = onCancel)
 
-                Box(
-                    modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp),
-                ) {
+                Box(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
                     Canvas(
                         modifier = Modifier
                             .fillMaxWidth()
