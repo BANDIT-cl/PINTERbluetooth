@@ -9,3 +9,8 @@
 .cxx
 local.properties
 /app/build
+
+# Firma de release para Google Play: nunca al repo.
+/upload-keystore.jks
+/keystore.properties
+/keystore-password.txt
